@@ -90,24 +90,17 @@ public class ReportGenerator {
             
             String details = "";
             if (file.getStatus() == FileStatus.SKIPPED && file.getReason() != null) {
-                details = String.format("<div class='diff'>%s</div>", 
-                    Jsoup.clean(file.getReason(), Safelist.basic()));
+                details = "<div class='diff'>" + Jsoup.clean(file.getReason(), Safelist.basic()) + "</div>";
             } else if (file.getDiffHunks() != null && !file.getDiffHunks().isEmpty()) {
                 details = generateDiffDetails(file.getDiffHunks());
             }
             
-            rows.append(String.format(
-                "<tr>\n" +
-                "    <td>%s</td>\n" +
-                "    <td class=\"%s\">%s %s</td>\n" +
-                "    <td>%s</td>\n" +
-                "</tr>\n",
-                Jsoup.clean(file.getPath(), Safelist.basic()),
-                statusClass,
-                statusIcon,
-                statusText,
-                details
-            ));
+            rows.append("<tr>\n")
+                .append("    <td>").append(Jsoup.clean(file.getPath(), Safelist.basic())).append("</td>\n")
+                .append("    <td class=\"").append(statusClass).append("\">")
+                .append(statusIcon).append(" ").append(statusText).append("</td>\n")
+                .append("    <td>").append(details).append("</td>\n")
+                .append("</tr>\n");
         }
         
         return rows.toString();
@@ -121,14 +114,17 @@ public class ReportGenerator {
             String[] lines = hunk.getContent().split("\n");
             for (String line : lines) {
                 if (line.startsWith("+")) {
-                    details.append(String.format("<div class='diff-added'>%s</div>",
-                        Jsoup.clean(line, Safelist.basic())));
+                    details.append("<div class='diff-added'>")
+                           .append(Jsoup.clean(line, Safelist.basic()))
+                           .append("</div>");
                 } else if (line.startsWith("-")) {
-                    details.append(String.format("<div class='diff-removed'>%s</div>",
-                        Jsoup.clean(line, Safelist.basic())));
+                    details.append("<div class='diff-removed'>")
+                           .append(Jsoup.clean(line, Safelist.basic()))
+                           .append("</div>");
                 } else {
-                    details.append(String.format("<div>%s</div>",
-                        Jsoup.clean(line, Safelist.basic())));
+                    details.append("<div>")
+                           .append(Jsoup.clean(line, Safelist.basic()))
+                           .append("</div>");
                 }
             }
         }
