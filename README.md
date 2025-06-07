@@ -12,7 +12,7 @@ A Java Maven application that automates porting changes from a specific pull req
 
 ## Requirements
 
-- Java 11 or higher
+- Java 8 or higher
 - Maven 3.6 or higher
 - Git repository with pull request access
 
@@ -32,7 +32,7 @@ java -jar target/pr-porting-utility-1.0-SNAPSHOT-jar-with-dependencies.jar <repo
 
 ### Parameters
 
-- `repoUrl`: URL of the Git repository
+- `repoUrl`: URL of the Git repository (supports both HTTPS and SSH URLs)
 - `sourceBranch`: Branch where the PR was raised
 - `targetBranch`: Branch where changes need to be ported
 - `prNumber`: Pull request number
@@ -40,8 +40,18 @@ java -jar target/pr-porting-utility-1.0-SNAPSHOT-jar-with-dependencies.jar <repo
 ### Example
 
 ```bash
+# Using HTTPS URL
 java -jar target/pr-porting-utility-1.0-SNAPSHOT-jar-with-dependencies.jar https://github.com/username/repo.git feature-branch main 123
+
+# Using SSH URL
+java -jar target/pr-porting-utility-1.0-SNAPSHOT-jar-with-dependencies.jar git@github.com:username/repo.git feature-branch main 123
 ```
+
+### Authentication
+
+The utility uses your system's Git credentials for authentication. Make sure you have:
+- For HTTPS: Git credentials configured in your credential manager
+- For SSH: SSH keys set up and added to your Git hosting service
 
 ## Output
 
@@ -90,4 +100,4 @@ The utility handles various scenarios:
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+This project is licensed under the MIT License - see the LICENSE file for details.
