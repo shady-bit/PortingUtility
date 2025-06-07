@@ -91,113 +91,86 @@ public class PRAnalyzer {
         System.out.println("Source commit: " + sourceId.getName());
         System.out.println("Target commit: " + targetId.getName());
 
-        try (RevWalk revWalk = new RevWalk(repository);
-             ObjectReader reader = repository.newObjectReader()) {
+        try (ObjectReader reader = repository.newObjectReader()) {
+            // Get the merge commit for PR #123
+            System.out.println("Finding merge commit for PR #" + prNumber + "...");
+            Iterable<RevCommit> mergeCommits = git.log()
+                .add(sourceId)
+                .call();
 
-            RevCommit sourceCommit = revWalk.parseCommit(sourceId);
-            RevCommit targetCommit = revWalk.parseCommit(targetId);
-
-            // Find merge base using RevWalk
-            System.out.println("Finding merge base...");
-            revWalk.reset();
-            revWalk.markStart(sourceCommit);
-            revWalk.markStart(targetCommit);
-            
-            RevCommit mergeBaseCommit = null;
-            for (RevCommit commit : revWalk) {
-                if (commit.getParentCount() > 0) {
-                    mergeBaseCommit = commit;
+            RevCommit prMergeCommit = null;
+            for (RevCommit commit : mergeCommits) {
+                String message = commit.getFullMessage();
+                if (message.contains("Merge pull request #" + prNumber) || 
+                    message.contains("Merged PR #" + prNumber)) {
+                    prMergeCommit = commit;
                     break;
                 }
             }
-            
-            if (mergeBaseCommit == null) {
-                throw new JGitInternalException("Could not find common ancestor between branches. " +
-                    "Source: " + sourceId.getName() + ", Target: " + targetId.getName());
-            }
-            
-            System.out.println("Merge base commit: " + mergeBaseCommit.getName());
 
-            // Get all commits between merge base and source commit
-            System.out.println("Getting PR commits...");
-            revWalk.reset();
-            revWalk.markStart(sourceCommit);
-            revWalk.markUninteresting(mergeBaseCommit);
-            
-            // Configure RevWalk to show all commits
-            revWalk.setRevFilter(RevFilter.ALL);
-            
-            Set<String> prChangedFiles = new HashSet<>();
-            Map<String, ChangedFile> changedFilesMap = new HashMap<>();
-            
-            int commitCount = 0;
-            // Process each commit in the PR
-            for (RevCommit commit : revWalk) {
-                if (commit.equals(mergeBaseCommit)) {
-                    break;
-                }
+            if (prMergeCommit == null) {
+                throw new JGitInternalException("Could not find merge commit for PR #" + prNumber);
+            }
+
+            System.out.println("Found merge commit: " + prMergeCommit.getName());
+            System.out.println("Merge commit message: " + prMergeCommit.getFullMessage());
+
+            // Get the parent commits of the merge commit
+            RevCommit[] parents = prMergeCommit.getParents();
+            if (parents.length != 2) {
+                throw new JGitInternalException("Expected merge commit to have 2 parents, found " + parents.length);
+            }
+
+            // The first parent is the base branch, the second is the PR branch
+            RevCommit baseParent = parents[0];
+            RevCommit prParent = parents[1];
+
+            System.out.println("Base parent commit: " + baseParent.getName());
+            System.out.println("PR parent commit: " + prParent.getName());
+
+            // Get the tree iterators for the base and PR parents
+            CanonicalTreeParser baseTree = new CanonicalTreeParser();
+            baseTree.reset(reader, baseParent.getTree().getId());
+            CanonicalTreeParser prTree = new CanonicalTreeParser();
+            prTree.reset(reader, prParent.getTree().getId());
+
+            // Get the list of changes between base and PR
+            System.out.println("Calculating changes from PR #" + prNumber + "...");
+            List<DiffEntry> diffs = git.diff()
+                    .setOldTree(baseTree)
+                    .setNewTree(prTree)
+                    .call();
+
+            System.out.println("Found " + diffs.size() + " files changed in PR #" + prNumber);
+
+            // Process each changed file
+            for (DiffEntry diff : diffs) {
+                String filePath = diff.getChangeType() == DiffEntry.ChangeType.DELETE ? 
+                    diff.getOldPath() : diff.getNewPath();
                 
-                commitCount++;
-                System.out.println("\nProcessing commit " + commitCount + ": " + commit.getName());
-                System.out.println("Commit message: " + commit.getFullMessage());
+                System.out.println("\nProcessing file: " + filePath);
+                System.out.println("Change type: " + diff.getChangeType());
                 
-                // Get the parent commit
-                RevCommit parent = commit.getParent(0);
-                
-                // Get the tree iterators for this commit and its parent
-                CanonicalTreeParser oldTree = new CanonicalTreeParser();
-                oldTree.reset(reader, parent.getTree().getId());
-                CanonicalTreeParser newTree = new CanonicalTreeParser();
-                newTree.reset(reader, commit.getTree().getId());
-                
-                // Get the list of changes in this commit
-                List<DiffEntry> diffs = git.diff()
-                        .setOldTree(oldTree)
-                        .setNewTree(newTree)
-                        .call();
-                
-                System.out.println("Found " + diffs.size() + " changes in this commit");
-                
-                // Process each changed file
-                for (DiffEntry diff : diffs) {
-                    String filePath = diff.getChangeType() == DiffEntry.ChangeType.DELETE ? 
-                        diff.getOldPath() : diff.getNewPath();
-                    
-                    System.out.println("  File: " + filePath + " (Change type: " + diff.getChangeType() + ")");
-                    
-                    if (!prChangedFiles.contains(filePath)) {
-                        prChangedFiles.add(filePath);
-                        ChangedFile changedFile = new ChangedFile(filePath);
-                        if (diff.getChangeType() == DiffEntry.ChangeType.MODIFY || 
-                            diff.getChangeType() == DiffEntry.ChangeType.ADD) {
-                            List<ChangedFile.DiffHunk> diffHunks = extractDiffHunks(diff, parent, commit);
-                            if (!diffHunks.isEmpty()) {
-                                changedFile.setDiffHunks(diffHunks);
-                                System.out.println("    Found " + diffHunks.size() + " diff hunks");
-                            }
-                        }
-                        changedFilesMap.put(filePath, changedFile);
+                ChangedFile changedFile = new ChangedFile(filePath);
+                if (diff.getChangeType() == DiffEntry.ChangeType.MODIFY || 
+                    diff.getChangeType() == DiffEntry.ChangeType.ADD) {
+                    List<ChangedFile.DiffHunk> diffHunks = extractDiffHunks(diff, baseParent, prParent);
+                    if (!diffHunks.isEmpty()) {
+                        changedFile.setDiffHunks(diffHunks);
+                        System.out.println("Found " + diffHunks.size() + " diff hunks");
                     }
                 }
+                changedFiles.add(changedFile);
             }
-            
-            System.out.println("\nTotal commits processed: " + commitCount);
-            
-            // Convert map to list
-            changedFiles.addAll(changedFilesMap.values());
-            System.out.println("Found " + changedFiles.size() + " unique files changed in PR");
+
+            System.out.println("\nTotal files changed in PR #" + prNumber + ": " + changedFiles.size());
             
             if (changedFiles.isEmpty()) {
-                System.out.println("WARNING: No files were detected in the PR. This might indicate an issue with:");
-                System.out.println("1. Branch resolution");
-                System.out.println("2. Commit history");
-                System.out.println("3. Merge base detection");
-                System.out.println("Please verify the source and target branches are correct.");
-                System.out.println("Source branch: " + sourceBranch);
-                System.out.println("Target branch: " + targetBranch);
-                System.out.println("Source commit: " + sourceId.getName());
-                System.out.println("Target commit: " + targetId.getName());
-                System.out.println("Merge base: " + mergeBaseCommit.getName());
+                System.out.println("WARNING: No files were detected in PR #" + prNumber);
+                System.out.println("Please verify:");
+                System.out.println("1. PR #" + prNumber + " exists and has been merged");
+                System.out.println("2. The merge commit message contains 'Merge pull request #" + prNumber + "'");
+                System.out.println("3. The source branch is correct");
             }
         }
 
