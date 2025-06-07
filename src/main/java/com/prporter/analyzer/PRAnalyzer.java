@@ -16,7 +16,11 @@ import org.eclipse.jgit.transport.CredentialsProvider;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class PRAnalyzer {
     private final Git git;
@@ -112,38 +116,61 @@ public class PRAnalyzer {
             
             System.out.println("Merge base commit: " + mergeBaseCommit.getName());
 
-            // Get the tree iterators for the merge base and source commit
-            CanonicalTreeParser mergeBaseTree = new CanonicalTreeParser();
-            mergeBaseTree.reset(reader, mergeBaseCommit.getTree().getId());
-            CanonicalTreeParser sourceTree = new CanonicalTreeParser();
-            sourceTree.reset(reader, sourceCommit.getTree().getId());
-
-            // Get the list of changes between merge base and source (PR changes)
-            System.out.println("Calculating PR changes...");
-            List<DiffEntry> diffs = git.diff()
-                    .setOldTree(mergeBaseTree)  // Compare against merge base
-                    .setNewTree(sourceTree)     // Using source branch changes
-                    .call();
-
-            // Process each changed file
-            for (DiffEntry diff : diffs) {
-                String filePath = diff.getChangeType() == DiffEntry.ChangeType.DELETE ? 
-                    diff.getOldPath() : diff.getNewPath();
+            // Get all commits between merge base and source commit
+            System.out.println("Getting PR commits...");
+            revWalk.reset();
+            revWalk.markStart(sourceCommit);
+            revWalk.markUninteresting(mergeBaseCommit);
+            
+            Set<String> prChangedFiles = new HashSet<>();
+            Map<String, ChangedFile> changedFilesMap = new HashMap<>();
+            
+            // Process each commit in the PR
+            for (RevCommit commit : revWalk) {
+                if (commit.equals(mergeBaseCommit)) {
+                    break;
+                }
                 
-                System.out.println("Processing file: " + filePath + " (Change type: " + diff.getChangeType() + ")");
+                System.out.println("Processing commit: " + commit.getName());
                 
-                ChangedFile changedFile = new ChangedFile(filePath);
-                if (diff.getChangeType() == DiffEntry.ChangeType.MODIFY || 
-                    diff.getChangeType() == DiffEntry.ChangeType.ADD) {
-                    List<ChangedFile.DiffHunk> diffHunks = extractDiffHunks(diff, mergeBaseCommit, sourceCommit);
-                    if (!diffHunks.isEmpty()) {
-                        changedFile.setDiffHunks(diffHunks);
-                        System.out.println("Found " + diffHunks.size() + " diff hunks in file: " + filePath);
+                // Get the parent commit
+                RevCommit parent = commit.getParent(0);
+                
+                // Get the tree iterators for this commit and its parent
+                CanonicalTreeParser oldTree = new CanonicalTreeParser();
+                oldTree.reset(reader, parent.getTree().getId());
+                CanonicalTreeParser newTree = new CanonicalTreeParser();
+                newTree.reset(reader, commit.getTree().getId());
+                
+                // Get the list of changes in this commit
+                List<DiffEntry> diffs = git.diff()
+                        .setOldTree(oldTree)
+                        .setNewTree(newTree)
+                        .call();
+                
+                // Process each changed file
+                for (DiffEntry diff : diffs) {
+                    String filePath = diff.getChangeType() == DiffEntry.ChangeType.DELETE ? 
+                        diff.getOldPath() : diff.getNewPath();
+                    
+                    if (!prChangedFiles.contains(filePath)) {
+                        prChangedFiles.add(filePath);
+                        ChangedFile changedFile = new ChangedFile(filePath);
+                        if (diff.getChangeType() == DiffEntry.ChangeType.MODIFY || 
+                            diff.getChangeType() == DiffEntry.ChangeType.ADD) {
+                            List<ChangedFile.DiffHunk> diffHunks = extractDiffHunks(diff, parent, commit);
+                            if (!diffHunks.isEmpty()) {
+                                changedFile.setDiffHunks(diffHunks);
+                                System.out.println("Found " + diffHunks.size() + " diff hunks in file: " + filePath);
+                            }
+                        }
+                        changedFilesMap.put(filePath, changedFile);
                     }
                 }
-                changedFiles.add(changedFile);
             }
-
+            
+            // Convert map to list
+            changedFiles.addAll(changedFilesMap.values());
             System.out.println("Found " + changedFiles.size() + " files changed in PR");
         }
 
