@@ -30,12 +30,22 @@ public class Main {
         String targetBranch = args[2];
         String prNumber = args[3];
 
+        System.out.println("Starting PR Porting Utility...");
+        System.out.println("Repository URL: " + repoUrl);
+        System.out.println("Source Branch: " + sourceBranch);
+        System.out.println("Target Branch: " + targetBranch);
+        System.out.println("PR Number: " + prNumber);
+
         try {
             // Create temporary directory for repository
+            System.out.println("Creating temporary directory...");
             Path tempDir = Files.createTempDirectory("pr-porter-");
             File repoDir = tempDir.toFile();
+            System.out.println("Temporary directory created at: " + tempDir.toAbsolutePath());
+            System.out.println("Repository will be cloned to: " + repoDir.getAbsolutePath());
 
             // Configure Git credentials
+            System.out.println("Configuring Git credentials...");
             CredentialsProvider credentialsProvider = null;
             if (repoUrl.startsWith("https://")) {
                 // Use personal access token for HTTPS URLs
@@ -46,59 +56,107 @@ public class Main {
                     System.err.println("export GITHUB_TOKEN=your_token_here");
                     System.exit(1);
                 }
+                System.out.println("Using HTTPS authentication with personal access token");
                 credentialsProvider = new UsernamePasswordCredentialsProvider(token, "");
             } else if (repoUrl.startsWith("git@")) {
                 // For SSH URLs, use SSH key
-                System.out.println("Using SSH authentication...");
+                System.out.println("Using SSH authentication with default SSH key");
                 // SSH authentication will use default SSH configuration
             }
 
-            // Clone repository
-            System.out.println("Cloning repository...");
-            Git git = Git.cloneRepository()
-                    .setURI(repoUrl)
-                    .setDirectory(repoDir)
-                    .setCredentialsProvider(credentialsProvider)
-                    .call();
+            // Clone repository with timeout
+            System.out.println("Starting repository clone...");
+            try {
+                Git git = Git.cloneRepository()
+                        .setURI(repoUrl)
+                        .setDirectory(repoDir)
+                        .setCredentialsProvider(credentialsProvider)
+                        .setTimeout(30) // 30 seconds timeout
+                        .setProgressMonitor(new org.eclipse.jgit.lib.ProgressMonitor() {
+                            @Override
+                            public void start(int totalTasks) {
+                                System.out.println("Starting clone operation...");
+                            }
 
-            // Initialize components
-            PRAnalyzer prAnalyzer = new PRAnalyzer(git);
-            ConflictChecker conflictChecker = new ConflictChecker(git);
-            FilePatcher filePatcher = new FilePatcher(git);
-            ReportGenerator reportGenerator = new ReportGenerator();
+                            @Override
+                            public void beginTask(String title, int totalWork) {
+                                System.out.println("Cloning: " + title);
+                            }
 
-            // Analyze PR changes
-            System.out.println("Analyzing PR changes...");
-            List<ChangedFile> changedFiles = prAnalyzer.analyzePR(sourceBranch, targetBranch, prNumber);
+                            @Override
+                            public void update(int completed) {
+                                System.out.print(".");
+                            }
 
-            // Process each changed file
-            for (ChangedFile file : changedFiles) {
-                System.out.println("Processing file: " + file.getPath());
-                
-                if (conflictChecker.hasConflict(file, targetBranch)) {
-                    file.setStatus(FileStatus.SKIPPED);
-                    file.setReason("Conflict detected in target branch");
-                } else {
-                    try {
-                        filePatcher.applyChanges(file, targetBranch, prNumber);
-                        file.setStatus(FileStatus.PORTED);
-                    } catch (Exception e) {
+                            @Override
+                            public void endTask() {
+                                System.out.println("\nClone operation completed");
+                            }
+
+                            @Override
+                            public boolean isCancelled() {
+                                return false;
+                            }
+                        })
+                        .call();
+
+                System.out.println("Repository cloned successfully");
+
+                // Initialize components
+                System.out.println("Initializing components...");
+                PRAnalyzer prAnalyzer = new PRAnalyzer(git);
+                ConflictChecker conflictChecker = new ConflictChecker(git);
+                FilePatcher filePatcher = new FilePatcher(git);
+                ReportGenerator reportGenerator = new ReportGenerator();
+
+                // Analyze PR changes
+                System.out.println("Starting PR analysis...");
+                List<ChangedFile> changedFiles = prAnalyzer.analyzePR(sourceBranch, targetBranch, prNumber);
+                System.out.println("Found " + changedFiles.size() + " changed files");
+
+                // Process each changed file
+                for (ChangedFile file : changedFiles) {
+                    System.out.println("\nProcessing file: " + file.getPath());
+                    
+                    if (conflictChecker.hasConflict(file, targetBranch)) {
+                        System.out.println("Conflict detected in target branch");
                         file.setStatus(FileStatus.SKIPPED);
-                        file.setReason("Error applying changes: " + e.getMessage());
+                        file.setReason("Conflict detected in target branch");
+                    } else {
+                        try {
+                            System.out.println("Applying changes to target branch...");
+                            filePatcher.applyChanges(file, targetBranch, prNumber);
+                            file.setStatus(FileStatus.PORTED);
+                            System.out.println("Changes applied successfully");
+                        } catch (Exception e) {
+                            System.out.println("Error applying changes: " + e.getMessage());
+                            file.setStatus(FileStatus.SKIPPED);
+                            file.setReason("Error applying changes: " + e.getMessage());
+                        }
                     }
                 }
+
+                // Generate report
+                System.out.println("\nGenerating report...");
+                String reportPath = reportGenerator.generateReport(changedFiles, prNumber);
+                System.out.println("Report generated at: " + reportPath);
+
+                // Cleanup
+                System.out.println("\nCleaning up...");
+                git.close();
+                deleteDirectory(repoDir);
+                System.out.println("Cleanup completed");
+
+            } catch (GitAPIException e) {
+                System.err.println("Error during Git operations: " + e.getMessage());
+                if (e.getCause() != null) {
+                    System.err.println("Caused by: " + e.getCause().getMessage());
+                }
+                e.printStackTrace();
+                System.exit(1);
             }
 
-            // Generate report
-            System.out.println("Generating report...");
-            String reportPath = reportGenerator.generateReport(changedFiles, prNumber);
-            System.out.println("Report generated at: " + reportPath);
-
-            // Cleanup
-            git.close();
-            deleteDirectory(repoDir);
-
-        } catch (GitAPIException | IOException e) {
+        } catch (IOException e) {
             System.err.println("Error: " + e.getMessage());
             e.printStackTrace();
             System.exit(1);
