@@ -29,13 +29,30 @@ public class PRAnalyzer {
     public List<ChangedFile> analyzePR(String sourceBranch, String targetBranch, String prNumber) throws GitAPIException, IOException {
         List<ChangedFile> changedFiles = new ArrayList<>();
 
-        // Get the commit IDs for both branches
-        ObjectId sourceId = repository.resolve(sourceBranch);
-        ObjectId targetId = repository.resolve(targetBranch);
+        // Fetch all remote branches
+        System.out.println("Fetching remote branches...");
+        git.fetch()
+           .setForceUpdate(true)
+           .call();
+        System.out.println("Remote branches fetched successfully");
 
-        if (sourceId == null || targetId == null) {
-            throw new JGitInternalException("Could not resolve branch references");
+        // Get the commit IDs for both branches
+        System.out.println("Resolving branch references...");
+        System.out.println("Source branch: " + sourceBranch);
+        System.out.println("Target branch: " + targetBranch);
+        
+        ObjectId sourceId = repository.resolve("refs/remotes/origin/" + sourceBranch);
+        ObjectId targetId = repository.resolve("refs/remotes/origin/" + targetBranch);
+
+        if (sourceId == null) {
+            throw new JGitInternalException("Could not resolve source branch: " + sourceBranch);
         }
+        if (targetId == null) {
+            throw new JGitInternalException("Could not resolve target branch: " + targetBranch);
+        }
+
+        System.out.println("Source commit: " + sourceId.getName());
+        System.out.println("Target commit: " + targetId.getName());
 
         try (RevWalk revWalk = new RevWalk(repository);
              ObjectReader reader = repository.newObjectReader()) {
@@ -50,6 +67,7 @@ public class PRAnalyzer {
             targetTree.reset(reader, targetCommit.getTree().getId());
 
             // Get the list of changes
+            System.out.println("Calculating differences between branches...");
             List<DiffEntry> diffs = git.diff()
                     .setOldTree(sourceTree)
                     .setNewTree(targetTree)
