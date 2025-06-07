@@ -1,6 +1,7 @@
 package com.prporter.analyzer;
 
 import com.prporter.model.ChangedFile;
+import com.prporter.model.FileStatus;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.api.errors.JGitInternalException;
@@ -11,6 +12,7 @@ import org.eclipse.jgit.lib.ObjectReader;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.revwalk.filter.RevFilter;
 import org.eclipse.jgit.treewalk.CanonicalTreeParser;
 import org.eclipse.jgit.transport.CredentialsProvider;
 import java.io.ByteArrayOutputStream;
@@ -122,6 +124,9 @@ public class PRAnalyzer {
             revWalk.markStart(sourceCommit);
             revWalk.markUninteresting(mergeBaseCommit);
             
+            // Configure RevWalk to show all commits
+            revWalk.setRevFilter(RevFilter.ALL);
+            
             Set<String> prChangedFiles = new HashSet<>();
             Map<String, ChangedFile> changedFilesMap = new HashMap<>();
             
@@ -188,6 +193,11 @@ public class PRAnalyzer {
                 System.out.println("2. Commit history");
                 System.out.println("3. Merge base detection");
                 System.out.println("Please verify the source and target branches are correct.");
+                System.out.println("Source branch: " + sourceBranch);
+                System.out.println("Target branch: " + targetBranch);
+                System.out.println("Source commit: " + sourceId.getName());
+                System.out.println("Target commit: " + targetId.getName());
+                System.out.println("Merge base: " + mergeBaseCommit.getName());
             }
         }
 
