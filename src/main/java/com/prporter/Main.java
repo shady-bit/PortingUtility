@@ -138,29 +138,51 @@ public class Main {
             // Analyze PR changes
             System.out.println("Starting PR analysis...");
             List<ChangedFile> changedFiles = prAnalyzer.analyzePR(sourceBranch, targetBranch, prNumber);
-            System.out.println("Found " + changedFiles.size() + " changed files");
+            System.out.println("Found " + changedFiles.size() + " changed files in PR #" + prNumber);
 
             // Process each changed file
+            int successCount = 0;
+            int skippedCount = 0;
             for (ChangedFile file : changedFiles) {
-                System.out.println("\nProcessing file: " + file.getPath());
+                System.out.println("\n----------------------------------------");
+                System.out.println("Processing file: " + file.getPath());
+                System.out.println("----------------------------------------");
                 
-                if (conflictChecker.hasConflict(file, targetBranch)) {
-                    System.out.println("Conflict detected in target branch");
-                    file.setStatus(FileStatus.SKIPPED);
-                    file.setReason("Conflict detected in target branch");
-                } else {
-                    try {
-                        System.out.println("Applying changes to target branch...");
-                        filePatcher.applyChanges(file, targetBranch, prNumber);
-                        file.setStatus(FileStatus.PORTED);
-                        System.out.println("Changes applied successfully");
-                    } catch (Exception e) {
-                        System.out.println("Error applying changes: " + e.getMessage());
+                try {
+                    // Check for conflicts
+                    System.out.println("Checking for conflicts...");
+                    if (conflictChecker.hasConflict(file, targetBranch)) {
+                        System.out.println("❌ Conflict detected in target branch");
                         file.setStatus(FileStatus.SKIPPED);
-                        file.setReason("Error applying changes: " + e.getMessage());
+                        file.setReason("Conflict detected in target branch");
+                        skippedCount++;
+                        continue;
                     }
+                    System.out.println("✅ No conflicts found");
+
+                    // Apply changes
+                    System.out.println("Applying changes to target branch...");
+                    filePatcher.applyChanges(file, targetBranch, prNumber);
+                    file.setStatus(FileStatus.PORTED);
+                    System.out.println("✅ Changes applied successfully");
+                    successCount++;
+                    
+                } catch (Exception e) {
+                    System.out.println("❌ Error processing file: " + e.getMessage());
+                    file.setStatus(FileStatus.SKIPPED);
+                    file.setReason("Error: " + e.getMessage());
+                    skippedCount++;
                 }
             }
+
+            // Print summary
+            System.out.println("\n----------------------------------------");
+            System.out.println("Porting Summary for PR #" + prNumber);
+            System.out.println("----------------------------------------");
+            System.out.println("Total files in PR: " + changedFiles.size());
+            System.out.println("Successfully ported: " + successCount);
+            System.out.println("Skipped: " + skippedCount);
+            System.out.println("----------------------------------------");
 
             // Generate report
             System.out.println("\nGenerating report...");
