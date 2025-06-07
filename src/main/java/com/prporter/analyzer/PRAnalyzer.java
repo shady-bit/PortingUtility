@@ -127,12 +127,21 @@ public class PRAnalyzer {
 
             // Process each changed file
             for (DiffEntry diff : diffs) {
-                if (diff.getChangeType() == DiffEntry.ChangeType.MODIFY) {
-                    ChangedFile changedFile = new ChangedFile(diff.getNewPath());
+                String filePath = diff.getChangeType() == DiffEntry.ChangeType.DELETE ? 
+                    diff.getOldPath() : diff.getNewPath();
+                
+                System.out.println("Processing file: " + filePath + " (Change type: " + diff.getChangeType() + ")");
+                
+                ChangedFile changedFile = new ChangedFile(filePath);
+                if (diff.getChangeType() == DiffEntry.ChangeType.MODIFY || 
+                    diff.getChangeType() == DiffEntry.ChangeType.ADD) {
                     List<ChangedFile.DiffHunk> diffHunks = extractDiffHunks(diff, mergeBaseCommit, sourceCommit);
-                    changedFile.setDiffHunks(diffHunks);
-                    changedFiles.add(changedFile);
+                    if (!diffHunks.isEmpty()) {
+                        changedFile.setDiffHunks(diffHunks);
+                        System.out.println("Found " + diffHunks.size() + " diff hunks in file: " + filePath);
+                    }
                 }
+                changedFiles.add(changedFile);
             }
 
             System.out.println("Found " + changedFiles.size() + " files changed in PR");
