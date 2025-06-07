@@ -38,10 +38,15 @@ public class Main {
             // Configure Git credentials
             CredentialsProvider credentialsProvider = null;
             if (repoUrl.startsWith("https://")) {
-                // Use Git's credential helper for HTTPS URLs
-                System.out.println("Using Git credential helper for authentication...");
-                // Create an empty credentials provider to trigger Git's credential helper
-                credentialsProvider = new UsernamePasswordCredentialsProvider("", "");
+                // Use personal access token for HTTPS URLs
+                String token = System.getenv("GITHUB_TOKEN");
+                if (token == null || token.isEmpty()) {
+                    System.err.println("Error: GITHUB_TOKEN environment variable is not set");
+                    System.err.println("Please set your GitHub personal access token:");
+                    System.err.println("export GITHUB_TOKEN=your_token_here");
+                    System.exit(1);
+                }
+                credentialsProvider = new UsernamePasswordCredentialsProvider(token, "");
             } else if (repoUrl.startsWith("git@")) {
                 // For SSH URLs, use SSH key
                 System.out.println("Using SSH authentication...");

@@ -53,10 +53,26 @@ java -jar target/pr-porting-utility-1.0-SNAPSHOT-jar-with-dependencies.jar git@g
 The utility supports multiple authentication methods:
 
 #### HTTPS Authentication (Recommended)
-For HTTPS repositories, the utility uses Git's built-in credential helper:
-1. A browser popup will appear automatically when authentication is needed
-2. Sign in with your Git hosting service credentials
-3. The credentials will be securely stored for future use
+For HTTPS repositories, you need to set up a personal access token:
+
+1. Create a GitHub personal access token:
+   - Go to GitHub Settings > Developer Settings > Personal Access Tokens
+   - Generate a new token with `repo` scope
+   - Copy the token
+
+2. Set the token as an environment variable:
+   ```bash
+   # For Linux/Mac
+   export GITHUB_TOKEN=your_token_here
+
+   # For Windows PowerShell
+   $env:GITHUB_TOKEN="your_token_here"
+   ```
+
+3. Run the utility:
+   ```bash
+   java -jar target/pr-porting-utility-1.0-SNAPSHOT-jar-with-dependencies.jar https://github.com/username/repo.git feature-branch main 123
+   ```
 
 #### SSH Authentication
 1. Ensure you have an SSH key pair generated:
@@ -66,7 +82,7 @@ For HTTPS repositories, the utility uses Git's built-in credential helper:
 2. Add the public key to your Git hosting service (GitHub, GitLab, etc.)
 3. The utility will automatically use your default SSH key from `~/.ssh/`
 
-Note: The browser popup authentication is the recommended method as it's secure and convenient. It's the same authentication method used by Git when you perform pull or push operations.
+Note: For security reasons, always use a personal access token with minimal required permissions.
 
 ### Branching Strategy
 
