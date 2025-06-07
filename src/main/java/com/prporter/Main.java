@@ -1,7 +1,6 @@
 package com.prporter;
 
 import com.prporter.analyzer.PRAnalyzer;
-import com.prporter.auth.BrowserAuthenticator;
 import com.prporter.checker.ConflictChecker;
 import com.prporter.model.ChangedFile;
 import com.prporter.model.FileStatus;
@@ -12,7 +11,6 @@ import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.transport.CredentialsProvider;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.eclipse.jgit.util.FS;
-import com.jcraft.jsch.Session;
 
 import java.io.File;
 import java.io.IOException;
@@ -40,10 +38,9 @@ public class Main {
             // Configure Git credentials
             CredentialsProvider credentialsProvider = null;
             if (repoUrl.startsWith("https://")) {
-                // Use browser-based authentication for HTTPS URLs
-                System.out.println("Setting up browser-based authentication...");
-                BrowserAuthenticator authenticator = new BrowserAuthenticator();
-                credentialsProvider = authenticator.authenticate();
+                // Use Git's credential helper for HTTPS URLs
+                System.out.println("Using Git credential helper for authentication...");
+                // Git will automatically show the browser popup when needed
             } else if (repoUrl.startsWith("git@")) {
                 // For SSH URLs, use SSH key
                 System.out.println("Using SSH authentication...");
