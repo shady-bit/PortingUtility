@@ -5,6 +5,7 @@ A Java Maven application that automates porting changes from a specific pull req
 ## Features
 
 - Clones the Git repository and checks out both source and target branches
+- Creates a new port branch from the target branch for changes
 - Analyzes pull request changes at the file and line level
 - Detects potential conflicts before applying changes
 - Applies changes only if no conflicts are found
@@ -53,6 +54,27 @@ The utility uses your system's Git credentials for authentication. Make sure you
 - For HTTPS: Git credentials configured in your credential manager
 - For SSH: SSH keys set up and added to your Git hosting service
 
+### Branching Strategy
+
+The utility implements a safe porting strategy:
+
+1. Creates a new branch named `{targetBranch}-port-{prNumber}` (e.g., "main-port-123")
+2. Applies all changes to this new branch
+3. Creates commits in the new branch
+
+After running the utility:
+1. Push the new port branch to the remote repository:
+   ```bash
+   git push origin {targetBranch}-port-{prNumber}
+   ```
+2. Create a pull request from the port branch to the target branch
+3. Review and merge the changes
+
+This approach allows for:
+- Safe review of changes before merging to target branch
+- Easy rollback if issues are found
+- Clean separation of ported changes
+
 ## Output
 
 The utility generates an HTML report in the `reports` directory with the following information:
@@ -61,6 +83,7 @@ The utility generates an HTML report in the `reports` directory with the followi
 - Status of each file (Successfully Ported or Skipped)
 - Reason for skipping if applicable
 - Diff information for successfully ported files
+- Name of the created port branch
 
 ## Project Structure
 

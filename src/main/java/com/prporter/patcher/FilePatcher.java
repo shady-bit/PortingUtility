@@ -20,10 +20,20 @@ public class FilePatcher {
         this.repository = git.getRepository();
     }
 
-    public void applyChanges(ChangedFile file, String targetBranch) throws GitAPIException, IOException {
-        // Checkout the target branch
+    public void applyChanges(ChangedFile file, String targetBranch, String prNumber) throws GitAPIException, IOException {
+        // Create a new branch name based on the target branch and PR number
+        String portBranchName = targetBranch + "-port-" + prNumber;
+        
+        // Checkout the target branch first
         git.checkout()
                 .setName(targetBranch)
+                .call();
+        
+        // Create and checkout the new port branch
+        git.checkout()
+                .setCreateBranch(true)
+                .setName(portBranchName)
+                .setStartPoint(targetBranch)
                 .call();
 
         // Get the file path
@@ -46,7 +56,7 @@ public class FilePatcher {
                 .call();
         
         git.commit()
-                .setMessage("Port changes from PR: " + file.getPath())
+                .setMessage("Port changes from PR #" + prNumber + ": " + file.getPath())
                 .call();
     }
 

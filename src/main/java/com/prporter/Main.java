@@ -58,7 +58,7 @@ public class Main {
                     file.setReason("Conflict detected in target branch");
                 } else {
                     try {
-                        filePatcher.applyChanges(file, targetBranch);
+                        filePatcher.applyChanges(file, targetBranch, prNumber);
                         file.setStatus(FileStatus.PORTED);
                     } catch (Exception e) {
                         file.setStatus(FileStatus.SKIPPED);
