@@ -40,7 +40,8 @@ public class Main {
             if (repoUrl.startsWith("https://")) {
                 // Use Git's credential helper for HTTPS URLs
                 System.out.println("Using Git credential helper for authentication...");
-                // Git will automatically show the browser popup when needed
+                // Create an empty credentials provider to trigger Git's credential helper
+                credentialsProvider = new UsernamePasswordCredentialsProvider("", "");
             } else if (repoUrl.startsWith("git@")) {
                 // For SSH URLs, use SSH key
                 System.out.println("Using SSH authentication...");
