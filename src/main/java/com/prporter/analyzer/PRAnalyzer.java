@@ -64,34 +64,43 @@ public class PRAnalyzer {
             RevCommit sourceCommit = revWalk.parseCommit(sourceId);
             RevCommit targetCommit = revWalk.parseCommit(targetId);
 
-            // Get the tree iterators for both commits
+            // Get the merge base commit (common ancestor)
+            ObjectId mergeBaseId = repository.resolve(targetBranch + "..." + sourceBranch);
+            if (mergeBaseId == null) {
+                throw new JGitInternalException("Could not find common ancestor between branches");
+            }
+            RevCommit mergeBaseCommit = revWalk.parseCommit(mergeBaseId);
+
+            // Get the tree iterators for the merge base and source commit
+            CanonicalTreeParser mergeBaseTree = new CanonicalTreeParser();
+            mergeBaseTree.reset(reader, mergeBaseCommit.getTree().getId());
             CanonicalTreeParser sourceTree = new CanonicalTreeParser();
             sourceTree.reset(reader, sourceCommit.getTree().getId());
-            CanonicalTreeParser targetTree = new CanonicalTreeParser();
-            targetTree.reset(reader, targetCommit.getTree().getId());
 
-            // Get the list of changes
-            System.out.println("Calculating differences between branches...");
+            // Get the list of changes between merge base and source (PR changes)
+            System.out.println("Calculating PR changes...");
             List<DiffEntry> diffs = git.diff()
-                    .setOldTree(sourceTree)
-                    .setNewTree(targetTree)
+                    .setOldTree(mergeBaseTree)  // Compare against merge base
+                    .setNewTree(sourceTree)     // Using source branch changes
                     .call();
 
             // Process each changed file
             for (DiffEntry diff : diffs) {
                 if (diff.getChangeType() == DiffEntry.ChangeType.MODIFY) {
                     ChangedFile changedFile = new ChangedFile(diff.getNewPath());
-                    List<ChangedFile.DiffHunk> diffHunks = extractDiffHunks(diff, sourceCommit, targetCommit);
+                    List<ChangedFile.DiffHunk> diffHunks = extractDiffHunks(diff, mergeBaseCommit, sourceCommit);
                     changedFile.setDiffHunks(diffHunks);
                     changedFiles.add(changedFile);
                 }
             }
+
+            System.out.println("Found " + changedFiles.size() + " files changed in PR");
         }
 
         return changedFiles;
     }
 
-    private List<ChangedFile.DiffHunk> extractDiffHunks(DiffEntry diff, RevCommit sourceCommit, RevCommit targetCommit) throws IOException {
+    private List<ChangedFile.DiffHunk> extractDiffHunks(DiffEntry diff, RevCommit oldCommit, RevCommit newCommit) throws IOException {
         List<ChangedFile.DiffHunk> diffHunks = new ArrayList<>();
         
         try (ByteArrayOutputStream out = new ByteArrayOutputStream();
