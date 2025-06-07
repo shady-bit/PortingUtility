@@ -50,9 +50,24 @@ java -jar target/pr-porting-utility-1.0-SNAPSHOT-jar-with-dependencies.jar git@g
 
 ### Authentication
 
-The utility uses your system's Git credentials for authentication. Make sure you have:
-- For HTTPS: Git credentials configured in your credential manager
-- For SSH: SSH keys set up and added to your Git hosting service
+The utility supports multiple authentication methods:
+
+#### Browser-based Authentication (Recommended)
+For HTTPS repositories, the utility will open your default web browser for authentication:
+1. A browser window will open automatically
+2. Enter the provided code
+3. Authorize the application
+4. The utility will automatically receive the authentication token
+
+#### SSH Authentication
+1. Ensure you have an SSH key pair generated:
+   ```bash
+   ssh-keygen -t ed25519 -C "your_email@example.com"
+   ```
+2. Add the public key to your Git hosting service (GitHub, GitLab, etc.)
+3. The utility will automatically use your default SSH key from `~/.ssh/`
+
+Note: Browser-based authentication is the recommended method as it's more secure and convenient. It uses OAuth2 device flow, which doesn't require storing credentials on your system.
 
 ### Branching Strategy
 

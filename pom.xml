@@ -25,6 +25,28 @@
             <version>${jgit.version}</version>
         </dependency>
 
+        <!-- JSch for SSH support -->
+        <dependency>
+            <groupId>com.jcraft</groupId>
+            <artifactId>jsch</artifactId>
+            <version>0.1.55</version>
+        </dependency>
+
+        <!-- OAuth2 and Browser Authentication -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp</artifactId>
+            <version>4.9.3</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.9.0</version>
+        </dependency>
+        <!-- JavaFX dependencies for Java 8+ must be provided by the runtime or via a compatible distribution.
+             The following dependency is removed because org.openjfx:javafx-web:8.0.202 does not exist in Maven Central.
+             If you need JavaFX support, use a supported version (e.g., 11+), or ensure JavaFX is available on the classpath. -->
+
         <!-- JSoup for HTML generation -->
         <dependency>
             <groupId>org.jsoup</groupId>

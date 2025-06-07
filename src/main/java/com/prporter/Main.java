@@ -1,6 +1,7 @@
 package com.prporter;
 
 import com.prporter.analyzer.PRAnalyzer;
+import com.prporter.auth.BrowserAuthenticator;
 import com.prporter.checker.ConflictChecker;
 import com.prporter.model.ChangedFile;
 import com.prporter.model.FileStatus;
@@ -8,6 +9,10 @@ import com.prporter.patcher.FilePatcher;
 import com.prporter.report.ReportGenerator;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.transport.CredentialsProvider;
+import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
+import org.eclipse.jgit.util.FS;
+import com.jcraft.jsch.Session;
 
 import java.io.File;
 import java.io.IOException;
@@ -32,11 +37,25 @@ public class Main {
             Path tempDir = Files.createTempDirectory("pr-porter-");
             File repoDir = tempDir.toFile();
 
+            // Configure Git credentials
+            CredentialsProvider credentialsProvider = null;
+            if (repoUrl.startsWith("https://")) {
+                // Use browser-based authentication for HTTPS URLs
+                System.out.println("Setting up browser-based authentication...");
+                BrowserAuthenticator authenticator = new BrowserAuthenticator();
+                credentialsProvider = authenticator.authenticate();
+            } else if (repoUrl.startsWith("git@")) {
+                // For SSH URLs, use SSH key
+                System.out.println("Using SSH authentication...");
+                // SSH authentication will use default SSH configuration
+            }
+
             // Clone repository
             System.out.println("Cloning repository...");
             Git git = Git.cloneRepository()
                     .setURI(repoUrl)
                     .setDirectory(repoDir)
+                    .setCredentialsProvider(credentialsProvider)
                     .call();
 
             // Initialize components
