@@ -125,13 +125,16 @@ public class PRAnalyzer {
             Set<String> prChangedFiles = new HashSet<>();
             Map<String, ChangedFile> changedFilesMap = new HashMap<>();
             
+            int commitCount = 0;
             // Process each commit in the PR
             for (RevCommit commit : revWalk) {
                 if (commit.equals(mergeBaseCommit)) {
                     break;
                 }
                 
-                System.out.println("Processing commit: " + commit.getName());
+                commitCount++;
+                System.out.println("\nProcessing commit " + commitCount + ": " + commit.getName());
+                System.out.println("Commit message: " + commit.getFullMessage());
                 
                 // Get the parent commit
                 RevCommit parent = commit.getParent(0);
@@ -148,10 +151,14 @@ public class PRAnalyzer {
                         .setNewTree(newTree)
                         .call();
                 
+                System.out.println("Found " + diffs.size() + " changes in this commit");
+                
                 // Process each changed file
                 for (DiffEntry diff : diffs) {
                     String filePath = diff.getChangeType() == DiffEntry.ChangeType.DELETE ? 
                         diff.getOldPath() : diff.getNewPath();
+                    
+                    System.out.println("  File: " + filePath + " (Change type: " + diff.getChangeType() + ")");
                     
                     if (!prChangedFiles.contains(filePath)) {
                         prChangedFiles.add(filePath);
@@ -161,7 +168,7 @@ public class PRAnalyzer {
                             List<ChangedFile.DiffHunk> diffHunks = extractDiffHunks(diff, parent, commit);
                             if (!diffHunks.isEmpty()) {
                                 changedFile.setDiffHunks(diffHunks);
-                                System.out.println("Found " + diffHunks.size() + " diff hunks in file: " + filePath);
+                                System.out.println("    Found " + diffHunks.size() + " diff hunks");
                             }
                         }
                         changedFilesMap.put(filePath, changedFile);
@@ -169,9 +176,19 @@ public class PRAnalyzer {
                 }
             }
             
+            System.out.println("\nTotal commits processed: " + commitCount);
+            
             // Convert map to list
             changedFiles.addAll(changedFilesMap.values());
-            System.out.println("Found " + changedFiles.size() + " files changed in PR");
+            System.out.println("Found " + changedFiles.size() + " unique files changed in PR");
+            
+            if (changedFiles.isEmpty()) {
+                System.out.println("WARNING: No files were detected in the PR. This might indicate an issue with:");
+                System.out.println("1. Branch resolution");
+                System.out.println("2. Commit history");
+                System.out.println("3. Merge base detection");
+                System.out.println("Please verify the source and target branches are correct.");
+            }
         }
 
         return changedFiles;
