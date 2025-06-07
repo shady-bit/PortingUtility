@@ -45,14 +45,41 @@ public class PRAnalyzer {
         System.out.println("Source branch: " + sourceBranch);
         System.out.println("Target branch: " + targetBranch);
         
-        ObjectId sourceId = repository.resolve("refs/remotes/origin/" + sourceBranch);
-        ObjectId targetId = repository.resolve("refs/remotes/origin/" + targetBranch);
-
+        // Try different reference formats
+        ObjectId sourceId = null;
+        ObjectId targetId = null;
+        
+        // Try with refs/remotes/origin/ prefix
+        sourceId = repository.resolve("refs/remotes/origin/" + sourceBranch);
+        targetId = repository.resolve("refs/remotes/origin/" + targetBranch);
+        
+        // If not found, try without prefix
         if (sourceId == null) {
-            throw new JGitInternalException("Could not resolve source branch: " + sourceBranch);
+            sourceId = repository.resolve(sourceBranch);
         }
         if (targetId == null) {
-            throw new JGitInternalException("Could not resolve target branch: " + targetBranch);
+            targetId = repository.resolve(targetBranch);
+        }
+        
+        // If still not found, try with origin/ prefix
+        if (sourceId == null) {
+            sourceId = repository.resolve("origin/" + sourceBranch);
+        }
+        if (targetId == null) {
+            targetId = repository.resolve("origin/" + targetBranch);
+        }
+
+        if (sourceId == null) {
+            throw new JGitInternalException("Could not resolve source branch: " + sourceBranch + 
+                "\nTried: refs/remotes/origin/" + sourceBranch + 
+                ", " + sourceBranch + 
+                ", origin/" + sourceBranch);
+        }
+        if (targetId == null) {
+            throw new JGitInternalException("Could not resolve target branch: " + targetBranch + 
+                "\nTried: refs/remotes/origin/" + targetBranch + 
+                ", " + targetBranch + 
+                ", origin/" + targetBranch);
         }
 
         System.out.println("Source commit: " + sourceId.getName());
@@ -65,11 +92,21 @@ public class PRAnalyzer {
             RevCommit targetCommit = revWalk.parseCommit(targetId);
 
             // Get the merge base commit (common ancestor)
-            ObjectId mergeBaseId = repository.resolve(targetBranch + "..." + sourceBranch);
-            if (mergeBaseId == null) {
-                throw new JGitInternalException("Could not find common ancestor between branches");
+            ObjectId mergeBaseId = null;
+            try {
+                mergeBaseId = repository.resolve(targetId.getName() + "..." + sourceId.getName());
+            } catch (Exception e) {
+                System.out.println("Warning: Could not find merge base using commit IDs, trying branch names...");
+                mergeBaseId = repository.resolve(targetBranch + "..." + sourceBranch);
             }
+            
+            if (mergeBaseId == null) {
+                throw new JGitInternalException("Could not find common ancestor between branches. " +
+                    "Source: " + sourceId.getName() + ", Target: " + targetId.getName());
+            }
+            
             RevCommit mergeBaseCommit = revWalk.parseCommit(mergeBaseId);
+            System.out.println("Merge base commit: " + mergeBaseId.getName());
 
             // Get the tree iterators for the merge base and source commit
             CanonicalTreeParser mergeBaseTree = new CanonicalTreeParser();

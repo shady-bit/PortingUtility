@@ -11,6 +11,10 @@ import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.transport.CredentialsProvider;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.eclipse.jgit.util.FS;
+import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
+import org.eclipse.jgit.api.ResetCommand;
+import org.eclipse.jgit.transport.URIish;
 
 import java.io.File;
 import java.io.IOException;
@@ -41,7 +45,7 @@ public class Main {
 
         try {
             File repoDir = new File(REPO_DIR);
-            boolean isNewClone = !repoDir.exists();
+            boolean isNewClone = !isValidGitRepository(repoDir);
 
             // Configure Git credentials
             System.out.println("Configuring Git credentials...");
@@ -64,6 +68,12 @@ public class Main {
             }
 
             if (isNewClone) {
+                // Clean up existing directory if it exists but is not a valid Git repo
+                if (repoDir.exists()) {
+                    System.out.println("Cleaning up invalid repository directory...");
+                    deleteDirectory(repoDir);
+                }
+                
                 // Clone repository if it doesn't exist
                 System.out.println("Cloning repository for the first time...");
                 git = Git.cloneRepository()
@@ -111,22 +121,9 @@ public class Main {
                 System.out.println("Opening existing repository...");
                 git = Git.open(repoDir);
                 
-                // Reset and clean the repository
-                System.out.println("Resetting repository state...");
-                git.reset()
-                   .setMode(org.eclipse.jgit.api.ResetCommand.ResetType.HARD)
-                   .call();
-                git.clean()
-                   .setCleanDirectories(true)
-                   .setForce(true)
-                   .call();
-                
-                // Fetch latest changes
-                System.out.println("Fetching latest changes...");
-                git.fetch()
-                   .setCredentialsProvider(credentialsProvider)
-                   .setForceUpdate(true)
-                   .call();
+                // Completely reset the repository state
+                System.out.println("Resetting repository to clean state...");
+                resetRepository(git, credentialsProvider);
             }
 
             // Initialize components
@@ -175,6 +172,100 @@ public class Main {
             System.err.println("Error: " + e.getMessage());
             e.printStackTrace();
             System.exit(1);
+        }
+    }
+
+    private static void resetRepository(Git git, CredentialsProvider credentialsProvider) throws GitAPIException, IOException {
+        // Fetch all remote changes
+        System.out.println("Fetching latest changes from remote...");
+        git.fetch()
+           .setCredentialsProvider(credentialsProvider)
+           .setForceUpdate(true)
+           .setRemoveDeletedRefs(true)
+           .setTagOpt(org.eclipse.jgit.transport.TagOpt.FETCH_TAGS)
+           .call();
+
+        // Reset to origin/main (or master)
+        String defaultBranch;
+        try {
+            git.getRepository().resolve("refs/remotes/origin/main");
+            defaultBranch = "main";
+        } catch (IOException e) {
+            defaultBranch = "master";
+        }
+        final String finalDefaultBranch = defaultBranch;
+
+        System.out.println("Resetting to origin/" + finalDefaultBranch + "...");
+        git.reset()
+           .setMode(ResetCommand.ResetType.HARD)
+           .setRef("refs/remotes/origin/" + finalDefaultBranch)
+           .call();
+
+        // Clean untracked files and directories
+        System.out.println("Cleaning untracked files...");
+        git.clean()
+           .setCleanDirectories(true)
+           .setForce(true)
+           .setIgnore(false)
+           .call();
+
+        // Prune remote-tracking branches
+        System.out.println("Pruning remote-tracking branches...");
+        String remoteUrl = git.getRepository().getConfig().getString("remote", "origin", "url");
+        git.remoteRemove()
+           .setRemoteName("origin")
+           .call();
+        try {
+            git.remoteAdd()
+               .setName("origin")
+               .setUri(new URIish(remoteUrl))
+               .call();
+        } catch (Exception e) {
+            throw new IOException("Invalid remote URL: " + remoteUrl, e);
+        }
+        git.fetch()
+           .setRemote("origin")
+           .setRemoveDeletedRefs(true)
+           .call();
+
+        // Delete all local branches except the current one
+        System.out.println("Cleaning up local branches...");
+        git.branchList()
+           .call()
+           .forEach(ref -> {
+               try {
+                   if (!ref.getName().equals("refs/heads/" + finalDefaultBranch)) {
+                       git.branchDelete()
+                          .setBranchNames(ref.getName())
+                          .setForce(true)
+                          .call();
+                   }
+               } catch (GitAPIException e) {
+                   System.out.println("Warning: Could not delete branch " + ref.getName() + ": " + e.getMessage());
+               }
+           });
+
+        System.out.println("Repository reset complete");
+    }
+
+    private static boolean isValidGitRepository(File directory) {
+        if (!directory.exists() || !directory.isDirectory()) {
+            return false;
+        }
+        
+        File gitDir = new File(directory, ".git");
+        if (!gitDir.exists() || !gitDir.isDirectory()) {
+            return false;
+        }
+        
+        try {
+            Repository repository = new FileRepositoryBuilder()
+                .setGitDir(gitDir)
+                .build();
+            repository.close();
+            return true;
+        } catch (IOException e) {
+            return false;
         }
     }
 
