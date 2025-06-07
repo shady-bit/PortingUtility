@@ -187,20 +187,11 @@ public class Main {
            .setTagOpt(org.eclipse.jgit.transport.TagOpt.FETCH_TAGS)
            .call();
 
-        // Reset to origin/main (or master)
-        String defaultBranch;
-        try {
-            git.getRepository().resolve("refs/remotes/origin/main");
-            defaultBranch = "main";
-        } catch (IOException e) {
-            defaultBranch = "master";
-        }
-        final String finalDefaultBranch = defaultBranch;
-
-        System.out.println("Resetting to origin/" + finalDefaultBranch + "...");
+        // Reset to origin/develop
+        System.out.println("Resetting to origin/develop...");
         git.reset()
            .setMode(ResetCommand.ResetType.HARD)
-           .setRef("refs/remotes/origin/" + finalDefaultBranch)
+           .setRef("refs/remotes/origin/develop")
            .call();
 
         // Clean untracked files and directories
@@ -230,13 +221,13 @@ public class Main {
            .setRemoveDeletedRefs(true)
            .call();
 
-        // Delete all local branches except the current one
+        // Delete all local branches except develop
         System.out.println("Cleaning up local branches...");
         git.branchList()
            .call()
            .forEach(ref -> {
                try {
-                   if (!ref.getName().equals("refs/heads/" + finalDefaultBranch)) {
+                   if (!ref.getName().equals("refs/heads/develop")) {
                        git.branchDelete()
                           .setBranchNames(ref.getName())
                           .setForce(true)
