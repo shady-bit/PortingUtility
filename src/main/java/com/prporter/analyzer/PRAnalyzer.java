@@ -91,37 +91,16 @@ public class PRAnalyzer {
             RevCommit sourceCommit = revWalk.parseCommit(sourceId);
             RevCommit targetCommit = revWalk.parseCommit(targetId);
 
-            // Find merge base using RevWalk
-            System.out.println("Finding merge base...");
-            revWalk.reset();
-            revWalk.markStart(sourceCommit);
-            revWalk.markStart(targetCommit);
-            
-            RevCommit mergeBaseCommit = null;
-            for (RevCommit commit : revWalk) {
-                if (commit.getParentCount() > 0) {
-                    mergeBaseCommit = commit;
-                    break;
-                }
-            }
-            
-            if (mergeBaseCommit == null) {
-                throw new JGitInternalException("Could not find common ancestor between branches. " +
-                    "Source: " + sourceId.getName() + ", Target: " + targetId.getName());
-            }
-            
-            System.out.println("Merge base commit: " + mergeBaseCommit.getName());
-
-            // Get the tree iterators for the merge base and source commit
-            CanonicalTreeParser mergeBaseTree = new CanonicalTreeParser();
-            mergeBaseTree.reset(reader, mergeBaseCommit.getTree().getId());
+            // Get the tree iterators for target and source commits
+            CanonicalTreeParser targetTree = new CanonicalTreeParser();
+            targetTree.reset(reader, targetCommit.getTree().getId());
             CanonicalTreeParser sourceTree = new CanonicalTreeParser();
             sourceTree.reset(reader, sourceCommit.getTree().getId());
 
-            // Get the list of changes between merge base and source (PR changes)
+            // Get the list of changes between target and source (PR changes)
             System.out.println("Calculating PR changes...");
             List<DiffEntry> diffs = git.diff()
-                    .setOldTree(mergeBaseTree)  // Compare against merge base
+                    .setOldTree(targetTree)     // Compare against target branch
                     .setNewTree(sourceTree)     // Using source branch changes
                     .call();
 
@@ -135,7 +114,7 @@ public class PRAnalyzer {
                 ChangedFile changedFile = new ChangedFile(filePath);
                 if (diff.getChangeType() == DiffEntry.ChangeType.MODIFY || 
                     diff.getChangeType() == DiffEntry.ChangeType.ADD) {
-                    List<ChangedFile.DiffHunk> diffHunks = extractDiffHunks(diff, mergeBaseCommit, sourceCommit);
+                    List<ChangedFile.DiffHunk> diffHunks = extractDiffHunks(diff, targetCommit, sourceCommit);
                     if (!diffHunks.isEmpty()) {
                         changedFile.setDiffHunks(diffHunks);
                         System.out.println("Found " + diffHunks.size() + " diff hunks in file: " + filePath);
