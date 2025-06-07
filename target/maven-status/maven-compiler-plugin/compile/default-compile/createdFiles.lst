@@ -1,0 +1,8 @@
+com\prporter\model\ChangedFile$DiffHunk.class
+com\prporter\model\FileStatus.class
+com\prporter\model\ChangedFile.class
+com\prporter\analyzer\PRAnalyzer.class
+com\prporter\patcher\FilePatcher.class
+com\prporter\report\ReportGenerator.class
+com\prporter\checker\ConflictChecker.class
+com\prporter\Main.class
