@@ -91,35 +91,26 @@ public class PRAnalyzer {
             RevCommit sourceCommit = revWalk.parseCommit(sourceId);
             RevCommit targetCommit = revWalk.parseCommit(targetId);
 
-            // Get the merge base commit (common ancestor)
-            ObjectId mergeBaseId = null;
-            try {
-                // First try with full ref names
-                mergeBaseId = repository.resolve("refs/remotes/origin/" + targetBranch + "..." + "refs/remotes/origin/" + sourceBranch);
-            } catch (Exception e) {
-                System.out.println("Warning: Could not find merge base using full ref names, trying alternatives...");
-                try {
-                    // Try with origin/ prefix
-                    mergeBaseId = repository.resolve("origin/" + targetBranch + "..." + "origin/" + sourceBranch);
-                } catch (Exception e2) {
-                    System.out.println("Warning: Could not find merge base using origin/ prefix, trying commit IDs...");
-                    try {
-                        // Try with commit IDs
-                        mergeBaseId = repository.resolve(targetId.getName() + "..." + sourceId.getName());
-                    } catch (Exception e3) {
-                        System.out.println("Warning: Could not find merge base using commit IDs, trying branch names...");
-                        mergeBaseId = repository.resolve(targetBranch + "..." + sourceBranch);
-                    }
+            // Find merge base using RevWalk
+            System.out.println("Finding merge base...");
+            revWalk.reset();
+            revWalk.markStart(sourceCommit);
+            revWalk.markStart(targetCommit);
+            
+            RevCommit mergeBaseCommit = null;
+            for (RevCommit commit : revWalk) {
+                if (commit.getParentCount() > 0) {
+                    mergeBaseCommit = commit;
+                    break;
                 }
             }
             
-            if (mergeBaseId == null) {
+            if (mergeBaseCommit == null) {
                 throw new JGitInternalException("Could not find common ancestor between branches. " +
                     "Source: " + sourceId.getName() + ", Target: " + targetId.getName());
             }
             
-            RevCommit mergeBaseCommit = revWalk.parseCommit(mergeBaseId);
-            System.out.println("Merge base commit: " + mergeBaseId.getName());
+            System.out.println("Merge base commit: " + mergeBaseCommit.getName());
 
             // Get the tree iterators for the merge base and source commit
             CanonicalTreeParser mergeBaseTree = new CanonicalTreeParser();
