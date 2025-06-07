@@ -13,6 +13,7 @@ import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.treewalk.CanonicalTreeParser;
 import org.eclipse.jgit.util.io.DisabledOutputStream;
+import org.eclipse.jgit.transport.CredentialsProvider;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -21,19 +22,31 @@ import java.util.List;
 public class ConflictChecker {
     private final Git git;
     private final Repository repository;
+    private final CredentialsProvider credentialsProvider;
 
-    public ConflictChecker(Git git) {
+    public ConflictChecker(Git git, CredentialsProvider credentialsProvider) {
         this.git = git;
         this.repository = git.getRepository();
+        this.credentialsProvider = credentialsProvider;
     }
 
     public boolean hasConflict(ChangedFile file, String targetBranch) throws GitAPIException, IOException {
+        // Fetch latest changes
+        System.out.println("Fetching latest changes for conflict check...");
+        git.fetch()
+           .setCredentialsProvider(credentialsProvider)
+           .setForceUpdate(true)
+           .call();
+
         // Get the current HEAD commit and the target branch commit
         ObjectId headId = repository.resolve("HEAD");
-        ObjectId targetId = repository.resolve(targetBranch);
+        ObjectId targetId = repository.resolve("refs/remotes/origin/" + targetBranch);
 
-        if (headId == null || targetId == null) {
-            throw new JGitInternalException("Could not resolve branch references");
+        if (headId == null) {
+            throw new JGitInternalException("Could not resolve HEAD reference");
+        }
+        if (targetId == null) {
+            throw new JGitInternalException("Could not resolve target branch: " + targetBranch);
         }
 
         try (RevWalk revWalk = new RevWalk(repository);
