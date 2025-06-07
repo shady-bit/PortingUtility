@@ -73,7 +73,8 @@ public class Main {
                         .setCredentialsProvider(credentialsProvider)
                         .setTimeout(30) // 30 seconds timeout
                         .setProgressMonitor(new org.eclipse.jgit.lib.ProgressMonitor() {
-                            private int count = 0;
+                            private int totalWork = 0;
+                            private int completed = 0;
                             
                             @Override
                             public void start(int totalTasks) {
@@ -82,14 +83,16 @@ public class Main {
 
                             @Override
                             public void beginTask(String title, int totalWork) {
-                                // Do nothing
+                                this.totalWork = totalWork;
+                                this.completed = 0;
                             }
 
                             @Override
                             public void update(int completed) {
-                                count++;
-                                if (count % 10 == 0) {
-                                    System.out.print("|");
+                                this.completed += completed;
+                                if (totalWork > 0) {
+                                    int percent = (this.completed * 100) / totalWork;
+                                    System.out.print("\rCloning: " + percent + "%");
                                 }
                             }
 
