@@ -115,33 +115,22 @@ public class PRAnalyzer {
             System.out.println("Found merge commit: " + prMergeCommit.getName());
             System.out.println("Merge commit message: " + prMergeCommit.getFullMessage());
 
-            // Get the parent commits of the merge commit
-            RevCommit[] parents = prMergeCommit.getParents();
-            if (parents.length != 2) {
-                throw new JGitInternalException("Expected merge commit to have 2 parents, found " + parents.length);
-            }
-
-            // The first parent is the base branch, the second is the PR branch
-            RevCommit baseParent = parents[0];
-            RevCommit prParent = parents[1];
-
-            System.out.println("Base parent commit: " + baseParent.getName());
-            System.out.println("PR parent commit: " + prParent.getName());
-
-            // Get the tree iterators for the base and PR parents
+            // Get the changes in the merge commit itself
+            System.out.println("Getting changes from merge commit...");
+            
+            // Get the tree iterators for the merge commit and its first parent (base branch)
             CanonicalTreeParser baseTree = new CanonicalTreeParser();
-            baseTree.reset(reader, baseParent.getTree().getId());
-            CanonicalTreeParser prTree = new CanonicalTreeParser();
-            prTree.reset(reader, prParent.getTree().getId());
+            baseTree.reset(reader, prMergeCommit.getParent(0).getTree().getId());
+            CanonicalTreeParser mergeTree = new CanonicalTreeParser();
+            mergeTree.reset(reader, prMergeCommit.getTree().getId());
 
-            // Get the list of changes between base and PR
-            System.out.println("Calculating changes from PR #" + prNumber + "...");
+            // Get the list of changes in the merge commit
             List<DiffEntry> diffs = git.diff()
                     .setOldTree(baseTree)
-                    .setNewTree(prTree)
+                    .setNewTree(mergeTree)
                     .call();
 
-            System.out.println("Found " + diffs.size() + " files changed in PR #" + prNumber);
+            System.out.println("Found " + diffs.size() + " files changed in merge commit");
 
             // Process each changed file
             for (DiffEntry diff : diffs) {
@@ -154,7 +143,7 @@ public class PRAnalyzer {
                 ChangedFile changedFile = new ChangedFile(filePath);
                 if (diff.getChangeType() == DiffEntry.ChangeType.MODIFY || 
                     diff.getChangeType() == DiffEntry.ChangeType.ADD) {
-                    List<ChangedFile.DiffHunk> diffHunks = extractDiffHunks(diff, baseParent, prParent);
+                    List<ChangedFile.DiffHunk> diffHunks = extractDiffHunks(diff, prMergeCommit.getParent(0), prMergeCommit);
                     if (!diffHunks.isEmpty()) {
                         changedFile.setDiffHunks(diffHunks);
                         System.out.println("Found " + diffHunks.size() + " diff hunks");
@@ -163,10 +152,10 @@ public class PRAnalyzer {
                 changedFiles.add(changedFile);
             }
 
-            System.out.println("\nTotal files changed in PR #" + prNumber + ": " + changedFiles.size());
+            System.out.println("\nTotal files changed in merge commit: " + changedFiles.size());
             
             if (changedFiles.isEmpty()) {
-                System.out.println("WARNING: No files were detected in PR #" + prNumber);
+                System.out.println("WARNING: No files were detected in the merge commit");
                 System.out.println("Please verify:");
                 System.out.println("1. PR #" + prNumber + " exists and has been merged");
                 System.out.println("2. The merge commit message contains 'Merge pull request #" + prNumber + "'");
