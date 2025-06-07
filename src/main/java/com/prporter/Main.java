@@ -216,9 +216,15 @@ public class Main {
         } catch (Exception e) {
             throw new IOException("Invalid remote URL: " + remoteUrl, e);
         }
+
+        // Fetch again with credentials after re-adding remote
+        System.out.println("Fetching latest changes after remote reconfiguration...");
         git.fetch()
            .setRemote("origin")
+           .setCredentialsProvider(credentialsProvider)
+           .setForceUpdate(true)
            .setRemoveDeletedRefs(true)
+           .setTagOpt(org.eclipse.jgit.transport.TagOpt.FETCH_TAGS)
            .call();
 
         // Delete all local branches except develop
