@@ -12,6 +12,7 @@ import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.treewalk.CanonicalTreeParser;
+import org.eclipse.jgit.transport.CredentialsProvider;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -20,10 +21,12 @@ import java.util.List;
 public class PRAnalyzer {
     private final Git git;
     private final Repository repository;
+    private final CredentialsProvider credentialsProvider;
 
-    public PRAnalyzer(Git git) {
+    public PRAnalyzer(Git git, CredentialsProvider credentialsProvider) {
         this.git = git;
         this.repository = git.getRepository();
+        this.credentialsProvider = credentialsProvider;
     }
 
     public List<ChangedFile> analyzePR(String sourceBranch, String targetBranch, String prNumber) throws GitAPIException, IOException {
@@ -32,6 +35,7 @@ public class PRAnalyzer {
         // Fetch all remote branches
         System.out.println("Fetching remote branches...");
         git.fetch()
+           .setCredentialsProvider(credentialsProvider)
            .setForceUpdate(true)
            .call();
         System.out.println("Remote branches fetched successfully");

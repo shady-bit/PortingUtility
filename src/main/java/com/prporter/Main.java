@@ -73,24 +73,29 @@ public class Main {
                         .setCredentialsProvider(credentialsProvider)
                         .setTimeout(30) // 30 seconds timeout
                         .setProgressMonitor(new org.eclipse.jgit.lib.ProgressMonitor() {
+                            private int count = 0;
+                            
                             @Override
                             public void start(int totalTasks) {
-                                System.out.println("Starting clone operation...");
+                                System.out.print("Cloning: ");
                             }
 
                             @Override
                             public void beginTask(String title, int totalWork) {
-                                System.out.println("Cloning: " + title);
+                                // Do nothing
                             }
 
                             @Override
                             public void update(int completed) {
-                                System.out.print(".");
+                                count++;
+                                if (count % 10 == 0) {
+                                    System.out.print("|");
+                                }
                             }
 
                             @Override
                             public void endTask() {
-                                System.out.println("\nClone operation completed");
+                                System.out.println(" Done");
                             }
 
                             @Override
@@ -104,7 +109,7 @@ public class Main {
 
                 // Initialize components
                 System.out.println("Initializing components...");
-                PRAnalyzer prAnalyzer = new PRAnalyzer(git);
+                PRAnalyzer prAnalyzer = new PRAnalyzer(git, credentialsProvider);
                 ConflictChecker conflictChecker = new ConflictChecker(git);
                 FilePatcher filePatcher = new FilePatcher(git);
                 ReportGenerator reportGenerator = new ReportGenerator();
