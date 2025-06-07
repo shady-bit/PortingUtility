@@ -94,10 +94,23 @@ public class PRAnalyzer {
             // Get the merge base commit (common ancestor)
             ObjectId mergeBaseId = null;
             try {
-                mergeBaseId = repository.resolve(targetId.getName() + "..." + sourceId.getName());
+                // First try with full ref names
+                mergeBaseId = repository.resolve("refs/remotes/origin/" + targetBranch + "..." + "refs/remotes/origin/" + sourceBranch);
             } catch (Exception e) {
-                System.out.println("Warning: Could not find merge base using commit IDs, trying branch names...");
-                mergeBaseId = repository.resolve(targetBranch + "..." + sourceBranch);
+                System.out.println("Warning: Could not find merge base using full ref names, trying alternatives...");
+                try {
+                    // Try with origin/ prefix
+                    mergeBaseId = repository.resolve("origin/" + targetBranch + "..." + "origin/" + sourceBranch);
+                } catch (Exception e2) {
+                    System.out.println("Warning: Could not find merge base using origin/ prefix, trying commit IDs...");
+                    try {
+                        // Try with commit IDs
+                        mergeBaseId = repository.resolve(targetId.getName() + "..." + sourceId.getName());
+                    } catch (Exception e3) {
+                        System.out.println("Warning: Could not find merge base using commit IDs, trying branch names...");
+                        mergeBaseId = repository.resolve(targetBranch + "..." + sourceBranch);
+                    }
+                }
             }
             
             if (mergeBaseId == null) {

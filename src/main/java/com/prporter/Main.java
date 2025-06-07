@@ -76,6 +76,7 @@ public class Main {
                 
                 // Clone repository if it doesn't exist
                 System.out.println("Cloning repository for the first time...");
+                System.out.println("Repository will be cloned to: " + repoDir.getAbsolutePath());
                 git = Git.cloneRepository()
                         .setURI(repoUrl)
                         .setDirectory(repoDir)
@@ -119,6 +120,7 @@ public class Main {
             } else {
                 // Open existing repository
                 System.out.println("Opening existing repository...");
+                System.out.println("Repository location: " + repoDir.getAbsolutePath());
                 git = Git.open(repoDir);
                 
                 // Completely reset the repository state
