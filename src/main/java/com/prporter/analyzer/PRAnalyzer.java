@@ -55,37 +55,58 @@ public class PRAnalyzer {
         ObjectId sourceId = null;
         ObjectId targetId = null;
         
+        System.out.println("Attempting to resolve branches...");
+        
         // Try with refs/remotes/origin/ prefix
+        System.out.println("Trying refs/remotes/origin/ prefix...");
         sourceId = repository.resolve("refs/remotes/origin/" + sourceBranch);
         targetId = repository.resolve("refs/remotes/origin/" + targetBranch);
         
         // If not found, try without prefix
         if (sourceId == null) {
+            System.out.println("Trying direct branch name for source...");
             sourceId = repository.resolve(sourceBranch);
         }
         if (targetId == null) {
+            System.out.println("Trying direct branch name for target...");
             targetId = repository.resolve(targetBranch);
         }
         
         // If still not found, try with origin/ prefix
         if (sourceId == null) {
+            System.out.println("Trying origin/ prefix for source...");
             sourceId = repository.resolve("origin/" + sourceBranch);
         }
         if (targetId == null) {
+            System.out.println("Trying origin/ prefix for target...");
             targetId = repository.resolve("origin/" + targetBranch);
+        }
+        
+        // If still not found, try with refs/heads/ prefix
+        if (sourceId == null) {
+            System.out.println("Trying refs/heads/ prefix for source...");
+            sourceId = repository.resolve("refs/heads/" + sourceBranch);
+        }
+        if (targetId == null) {
+            System.out.println("Trying refs/heads/ prefix for target...");
+            targetId = repository.resolve("refs/heads/" + targetBranch);
         }
 
         if (sourceId == null) {
             throw new JGitInternalException("Could not resolve source branch: " + sourceBranch + 
                 "\nTried: refs/remotes/origin/" + sourceBranch + 
                 ", " + sourceBranch + 
-                ", origin/" + sourceBranch);
+                ", origin/" + sourceBranch +
+                ", refs/heads/" + sourceBranch +
+                "\nPlease verify the branch exists and has been fetched.");
         }
         if (targetId == null) {
             throw new JGitInternalException("Could not resolve target branch: " + targetBranch + 
                 "\nTried: refs/remotes/origin/" + targetBranch + 
                 ", " + targetBranch + 
-                ", origin/" + targetBranch);
+                ", origin/" + targetBranch +
+                ", refs/heads/" + targetBranch +
+                "\nPlease verify the branch exists and has been fetched.");
         }
 
         System.out.println("Source commit: " + sourceId.getName());
