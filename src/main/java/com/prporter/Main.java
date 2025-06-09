@@ -205,7 +205,6 @@ public class Main {
         git.fetch()
            .setCredentialsProvider(credentialsProvider)
            .setForceUpdate(true)
-           .setRemoveDeletedRefs(true)
            .setTagOpt(org.eclipse.jgit.transport.TagOpt.FETCH_TAGS)
            .call();
 
@@ -224,47 +223,43 @@ public class Main {
            .setIgnore(false)
            .call();
 
-        // Prune remote-tracking branches
-        System.out.println("Pruning remote-tracking branches...");
-        String remoteUrl = git.getRepository().getConfig().getString("remote", "origin", "url");
-        git.remoteRemove()
-           .setRemoteName("origin")
-           .call();
-        try {
-            git.remoteAdd()
-               .setName("origin")
-               .setUri(new URIish(remoteUrl))
-               .call();
-        } catch (Exception e) {
-            throw new IOException("Invalid remote URL: " + remoteUrl, e);
-        }
+        // List all branches before cleanup
+        System.out.println("\nBranches before cleanup:");
+        git.branchList().call().forEach(ref -> 
+            System.out.println("  " + ref.getName())
+        );
 
-        // Fetch again with credentials after re-adding remote
-        System.out.println("Fetching latest changes after remote reconfiguration...");
-        git.fetch()
-           .setRemote("origin")
-           .setCredentialsProvider(credentialsProvider)
-           .setForceUpdate(true)
-           .setRemoveDeletedRefs(true)
-           .setTagOpt(org.eclipse.jgit.transport.TagOpt.FETCH_TAGS)
-           .call();
-
-        // Delete all local branches except develop
-        System.out.println("Cleaning up local branches...");
+        // Delete only local branches that are not tracking any remote branch
+        System.out.println("\nCleaning up untracked local branches...");
         git.branchList()
            .call()
            .forEach(ref -> {
                try {
-                   if (!ref.getName().equals("refs/heads/develop")) {
-                       git.branchDelete()
-                          .setBranchNames(ref.getName())
-                          .setForce(true)
-                          .call();
+                   String branchName = ref.getName();
+                   if (!branchName.equals("refs/heads/develop")) {
+                       // Check if this is a tracking branch
+                       String trackingBranch = git.getRepository().getConfig()
+                           .getString("branch", branchName.substring("refs/heads/".length()), "merge");
+                       if (trackingBranch == null) {
+                           System.out.println("Deleting untracked local branch: " + branchName);
+                           git.branchDelete()
+                              .setBranchNames(branchName)
+                              .setForce(true)
+                              .call();
+                       } else {
+                           System.out.println("Keeping tracking branch: " + branchName);
+                       }
                    }
                } catch (GitAPIException e) {
-                   System.out.println("Warning: Could not delete branch " + ref.getName() + ": " + e.getMessage());
+                   System.out.println("Warning: Could not process branch " + ref.getName() + ": " + e.getMessage());
                }
            });
+
+        // List all branches after cleanup
+        System.out.println("\nBranches after cleanup:");
+        git.branchList().call().forEach(ref -> 
+            System.out.println("  " + ref.getName())
+        );
 
         System.out.println("Repository reset complete");
     }

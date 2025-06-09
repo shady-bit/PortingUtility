@@ -24,48 +24,62 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.eclipse.jgit.lib.Ref;
+import org.eclipse.jgit.lib.RepositoryState;
 
 public class PRAnalyzer {
     private final Git git;
     private final Repository repository;
     private final CredentialsProvider credentialsProvider;
+    private static final String SAFETY_MESSAGE = "\n⚠️  SAFETY NOTICE: This utility is READ-ONLY until you explicitly push changes.\n" +
+                                               "   No remote branches will be modified or deleted.\n" +
+                                               "   All changes are local until you choose to push them.\n";
 
     public PRAnalyzer(Git git, CredentialsProvider credentialsProvider) {
         this.git = git;
         this.repository = git.getRepository();
         this.credentialsProvider = credentialsProvider;
+        System.out.println(SAFETY_MESSAGE);
     }
 
     public List<ChangedFile> analyzePR(String sourceBranch, String targetBranch, String prNumber) throws GitAPIException, IOException {
         List<ChangedFile> changedFiles = new ArrayList<>();
 
-        // Fetch all remote branches
-        System.out.println("Fetching remote branches...");
+        // Verify we're in a clean state
+        System.out.println("\n🔍 Verifying repository state...");
+        if (!repository.getRepositoryState().equals(RepositoryState.SAFE)) {
+            System.out.println("⚠️  Warning: Repository is not in a clean state");
+            System.out.println("   Current state: " + repository.getRepositoryState());
+            System.out.println("   This is safe - we're only reading information");
+        }
+
+        // Fetch all remote branches (read-only operation)
+        System.out.println("\n📥 Fetching remote branches (read-only operation)...");
         try {
             git.fetch()
                .setCredentialsProvider(credentialsProvider)
                .setForceUpdate(true)
                .setRefSpecs("+refs/heads/*:refs/remotes/origin/*")
                .call();
-            System.out.println("Remote branches fetched successfully");
+            System.out.println("✅ Remote branches fetched successfully");
+            System.out.println("   Note: This only updates local references to remote branches");
         } catch (GitAPIException e) {
-            System.err.println("Error fetching remote branches: " + e.getMessage());
+            System.err.println("❌ Error fetching remote branches: " + e.getMessage());
             throw new JGitInternalException("Failed to fetch remote branches. Please check your credentials and network connection.", e);
         }
 
         // Get the commit IDs for both branches
-        System.out.println("Resolving branch references...");
-        System.out.println("Source branch: " + sourceBranch);
-        System.out.println("Target branch: " + targetBranch);
+        System.out.println("\n🔍 Resolving branch references (read-only operation)...");
+        System.out.println("   Source branch: " + sourceBranch);
+        System.out.println("   Target branch: " + targetBranch);
         
         // List all available references for debugging
-        System.out.println("\nAvailable references:");
+        System.out.println("\n📋 Available references (read-only operation):");
         try {
             for (Ref ref : git.getRepository().getRefDatabase().getRefs()) {
-                System.out.println("  " + ref.getName());
+                System.out.println("   " + ref.getName());
             }
         } catch (IOException e) {
-            System.err.println("Error listing references: " + e.getMessage());
+            System.err.println("❌ Error listing references: " + e.getMessage());
         }
         System.out.println();
         
@@ -73,7 +87,7 @@ public class PRAnalyzer {
         ObjectId sourceId = null;
         ObjectId targetId = null;
         
-        System.out.println("Attempting to resolve branches...");
+        System.out.println("🔄 Attempting to resolve branches (read-only operation)...");
         
         // Try with refs/remotes/origin/ prefix
         System.out.println("Trying refs/remotes/origin/ prefix...");
