@@ -23,6 +23,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.eclipse.jgit.lib.Ref;
 
 public class PRAnalyzer {
     private final Git git;
@@ -40,16 +41,33 @@ public class PRAnalyzer {
 
         // Fetch all remote branches
         System.out.println("Fetching remote branches...");
-        git.fetch()
-           .setCredentialsProvider(credentialsProvider)
-           .setForceUpdate(true)
-           .call();
-        System.out.println("Remote branches fetched successfully");
+        try {
+            git.fetch()
+               .setCredentialsProvider(credentialsProvider)
+               .setForceUpdate(true)
+               .setRefSpecs("+refs/heads/*:refs/remotes/origin/*")
+               .call();
+            System.out.println("Remote branches fetched successfully");
+        } catch (GitAPIException e) {
+            System.err.println("Error fetching remote branches: " + e.getMessage());
+            throw new JGitInternalException("Failed to fetch remote branches. Please check your credentials and network connection.", e);
+        }
 
         // Get the commit IDs for both branches
         System.out.println("Resolving branch references...");
         System.out.println("Source branch: " + sourceBranch);
         System.out.println("Target branch: " + targetBranch);
+        
+        // List all available references for debugging
+        System.out.println("\nAvailable references:");
+        try {
+            for (Ref ref : git.getRepository().getRefDatabase().getRefs()) {
+                System.out.println("  " + ref.getName());
+            }
+        } catch (IOException e) {
+            System.err.println("Error listing references: " + e.getMessage());
+        }
+        System.out.println();
         
         // Try different reference formats
         ObjectId sourceId = null;
