@@ -1,6 +1,7 @@
 package com.prporter.patcher;
 
 import com.prporter.model.ChangedFile;
+import com.prporter.model.ChangedFile.MethodChange;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.lib.Repository;
@@ -11,6 +12,8 @@ import org.eclipse.jgit.diff.RawTextComparator;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectReader;
 import org.eclipse.jgit.treewalk.CanonicalTreeParser;
+import org.eclipse.jgit.revwalk.RevCommit;
+import org.eclipse.jgit.revwalk.RevWalk;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -30,167 +33,179 @@ public class FilePatcher {
         this.repository = git.getRepository();
     }
 
-    public void applyChanges(ChangedFile file, String targetBranch, String prNumber) throws GitAPIException, IOException {
-        // Create a new branch name based on the target branch and PR number
+    public void applyChanges(ChangedFile file, String targetBranch, String prNumber) throws IOException, GitAPIException {
+        // Create new branch for the port
         String portBranchName = targetBranch + "-port-" + prNumber;
+        System.out.println("Creating port branch: " + portBranchName);
         
-        // Checkout the target branch first
+        // Checkout target branch first
         git.checkout()
-                .setName(targetBranch)
-                .call();
+           .setName(targetBranch)
+           .call();
         
-        // Create and checkout the new port branch
+        // Create and checkout new branch
         git.checkout()
-                .setCreateBranch(true)
-                .setName(portBranchName)
-                .setStartPoint(targetBranch)
-                .call();
+           .setCreateBranch(true)
+           .setName(portBranchName)
+           .call();
 
-        // Get the file path
-        Path filePath = Paths.get(repository.getWorkTree().getAbsolutePath(), file.getPath());
+        // Read current content of the file
+        Path filePath = git.getRepository().getWorkTree().toPath().resolve(file.getPath());
+        List<String> currentLines = Files.readAllLines(filePath);
         
-        // Read the current content of the file
-        List<String> lines = Files.readAllLines(filePath);
+        // Track which methods were successfully ported
+        List<String> portedMethods = new ArrayList<>();
+        List<String> failedMethods = new ArrayList<>();
         
-        // Get the current state of the file in the target branch
-        ObjectId targetTreeId = repository.resolve(targetBranch + "^{tree}");
-        CanonicalTreeParser targetTree = new CanonicalTreeParser();
-        try (ObjectReader reader = repository.newObjectReader()) {
-            targetTree.reset(reader, targetTreeId);
-        }
-
-        // Apply the changes from each diff hunk with context
-        for (ChangedFile.DiffHunk hunk : file.getDiffHunks()) {
-            if (!applyDiffHunkIntelligently(lines, hunk, filePath)) {
-                System.out.println("Warning: Could not apply hunk at line " + hunk.getStartLine() + 
-                    " in file " + file.getPath() + ". Manual review may be needed.");
+        // Process each method change
+        for (MethodChange methodChange : file.getMethodChanges()) {
+            try {
+                System.out.println("Processing method: " + methodChange.getName());
+                boolean success = applyMethodChange(currentLines, methodChange);
+                if (success) {
+                    methodChange.setPorted(true);
+                    portedMethods.add(methodChange.getName());
+                } else {
+                    failedMethods.add(methodChange.getName());
+                }
+            } catch (Exception e) {
+                System.out.println("Failed to port method " + methodChange.getName() + ": " + e.getMessage());
+                failedMethods.add(methodChange.getName());
             }
         }
-        
+
         // Write the modified content back to the file
-        Files.write(filePath, lines);
-        
+        Files.write(filePath, currentLines);
+
         // Stage and commit the changes
         git.add()
-                .addFilepattern(file.getPath())
-                .call();
+           .addFilepattern(file.getPath())
+           .call();
+
+        // Create commit message with porting details
+        StringBuilder commitMessage = new StringBuilder();
+        commitMessage.append("Port changes from PR #").append(prNumber).append("\n\n");
         
+        if (!portedMethods.isEmpty()) {
+            commitMessage.append("Successfully ported methods:\n");
+            for (String method : portedMethods) {
+                commitMessage.append("- ").append(method).append("\n");
+            }
+        }
+        
+        if (!failedMethods.isEmpty()) {
+            commitMessage.append("\nFailed to port methods (manual review needed):\n");
+            for (String method : failedMethods) {
+                commitMessage.append("- ").append(method).append("\n");
+            }
+        }
+
         git.commit()
-                .setMessage("Port changes from PR #" + prNumber + ": " + file.getPath())
-                .call();
+           .setMessage(commitMessage.toString())
+           .call();
+
+        // Update file status based on porting results
+        if (failedMethods.isEmpty()) {
+            file.setStatus(com.prporter.model.FileStatus.PORTED);
+        } else if (!portedMethods.isEmpty()) {
+            file.setStatus(com.prporter.model.FileStatus.PARTIALLY_PORTED);
+            file.setReason("Partially ported: " + String.join(", ", failedMethods) + " need manual review");
+        } else {
+            file.setStatus(com.prporter.model.FileStatus.SKIPPED);
+            file.setReason("Failed to port any methods: " + String.join(", ", failedMethods));
+        }
     }
 
-    private boolean applyDiffHunkIntelligently(List<String> lines, ChangedFile.DiffHunk hunk, Path filePath) {
-        String[] diffLines = hunk.getContent().split("\n");
-        int currentLine = hunk.getStartLine() - 1; // Convert to 0-based index
+    private boolean applyMethodChange(List<String> currentLines, MethodChange methodChange) {
+        String[] methodLines = methodChange.getContent().split("\n");
+        int bestMatchLine = findBestMatchLocation(currentLines, methodLines);
         
-        // Extract context lines
-        List<String> contextBefore = new ArrayList<>();
-        List<String> contextAfter = new ArrayList<>();
-        List<String> changes = new ArrayList<>();
-        
-        boolean foundChanges = false;
-        for (String diffLine : diffLines) {
-            if (diffLine.startsWith(" ")) {
-                if (foundChanges) {
-                    contextAfter.add(diffLine.substring(1));
-                } else {
-                    contextBefore.add(diffLine.substring(1));
-                }
-            } else if (diffLine.startsWith("+") || diffLine.startsWith("-")) {
-                foundChanges = true;
-                changes.add(diffLine);
-            }
-        }
-        
-        // Find the best matching location for the hunk
-        int bestMatchLine = findBestMatchLocation(lines, contextBefore, contextAfter, currentLine);
         if (bestMatchLine == -1) {
+            System.out.println("Could not find suitable location for method: " + methodChange.getName());
             return false;
         }
-        
-        // Apply the changes at the best matching location
-        int lineIndex = bestMatchLine;
-        for (String change : changes) {
-            if (change.startsWith("+")) {
-                if (lineIndex < lines.size()) {
-                    lines.add(lineIndex, change.substring(1));
-                } else {
-                    lines.add(change.substring(1));
-                }
-                lineIndex++;
-            } else if (change.startsWith("-")) {
-                if (lineIndex < lines.size()) {
-                    lines.remove(lineIndex);
+
+        // Apply the method changes
+        try {
+            // Remove old method if it exists
+            int methodEnd = findMethodEnd(currentLines, bestMatchLine);
+            if (methodEnd > bestMatchLine) {
+                for (int i = methodEnd; i >= bestMatchLine; i--) {
+                    currentLines.remove(i);
                 }
             }
-        }
-        
-        return true;
-    }
 
-    private int findBestMatchLocation(List<String> lines, List<String> contextBefore, List<String> contextAfter, int expectedLine) {
-        // First try the expected line
-        if (matchesContext(lines, contextBefore, contextAfter, expectedLine)) {
-            return expectedLine;
-        }
-        
-        // If that fails, look for the best match within a reasonable range
-        int searchRange = 10; // Look 10 lines up and down
-        int bestMatch = -1;
-        int bestScore = 0;
-        
-        for (int i = Math.max(0, expectedLine - searchRange); 
-             i < Math.min(lines.size(), expectedLine + searchRange); i++) {
-            int score = calculateContextMatchScore(lines, contextBefore, contextAfter, i);
-            if (score > bestScore) {
-                bestScore = score;
-                bestMatch = i;
+            // Insert new method
+            for (int i = 0; i < methodLines.length; i++) {
+                currentLines.add(bestMatchLine + i, methodLines[i]);
             }
-        }
-        
-        return bestMatch;
-    }
-
-    private boolean matchesContext(List<String> lines, List<String> contextBefore, List<String> contextAfter, int line) {
-        // Check if we have enough lines before and after
-        if (line < contextBefore.size() || line + contextAfter.size() > lines.size()) {
+            return true;
+        } catch (Exception e) {
+            System.out.println("Error applying method changes: " + e.getMessage());
             return false;
         }
-        
-        // Check context before
-        for (int i = 0; i < contextBefore.size(); i++) {
-            if (!lines.get(line - contextBefore.size() + i).equals(contextBefore.get(i))) {
-                return false;
-            }
-        }
-        
-        // Check context after
-        for (int i = 0; i < contextAfter.size(); i++) {
-            if (!lines.get(line + i).equals(contextAfter.get(i))) {
-                return false;
-            }
-        }
-        
-        return true;
     }
 
-    private int calculateContextMatchScore(List<String> lines, List<String> contextBefore, List<String> contextAfter, int line) {
+    private int findMethodEnd(List<String> lines, int startLine) {
+        int braceCount = 0;
+        for (int i = startLine; i < lines.size(); i++) {
+            String line = lines.get(i);
+            braceCount += countChar(line, '{');
+            braceCount -= countChar(line, '}');
+            if (braceCount == 0) {
+                return i;
+            }
+        }
+        return startLine;
+    }
+
+    private int countChar(String str, char c) {
+        return (int) str.chars().filter(ch -> ch == c).count();
+    }
+
+    private int findBestMatchLocation(List<String> currentLines, String[] methodLines) {
+        // First try to find the method by name
+        String methodName = extractMethodName(methodLines[0]);
+        for (int i = 0; i < currentLines.size(); i++) {
+            if (currentLines.get(i).contains(methodName + "(")) {
+                return i;
+            }
+        }
+
+        // If not found, try to find a good location based on context
+        int bestMatchLine = -1;
+        int bestMatchScore = 0;
+
+        for (int i = 0; i < currentLines.size(); i++) {
+            int score = calculateMatchScore(currentLines, i, methodLines);
+            if (score > bestMatchScore) {
+                bestMatchScore = score;
+                bestMatchLine = i;
+            }
+        }
+
+        return bestMatchLine;
+    }
+
+    private String extractMethodName(String line) {
+        String[] parts = line.split("\\s+");
+        for (int i = 0; i < parts.length; i++) {
+            if (parts[i].contains("(")) {
+                return parts[i].substring(0, parts[i].indexOf("("));
+            }
+        }
+        return "";
+    }
+
+    private int calculateMatchScore(List<String> currentLines, int startLine, String[] methodLines) {
         int score = 0;
+        int maxLines = Math.min(5, methodLines.length);
         
-        // Check context before
-        for (int i = 0; i < contextBefore.size(); i++) {
-            if (line - contextBefore.size() + i >= 0 && 
-                line - contextBefore.size() + i < lines.size() &&
-                lines.get(line - contextBefore.size() + i).equals(contextBefore.get(i))) {
-                score++;
+        for (int i = 0; i < maxLines; i++) {
+            if (startLine + i >= currentLines.size()) {
+                break;
             }
-        }
-        
-        // Check context after
-        for (int i = 0; i < contextAfter.size(); i++) {
-            if (line + i < lines.size() && 
-                lines.get(line + i).equals(contextAfter.get(i))) {
+            if (currentLines.get(startLine + i).trim().equals(methodLines[i].trim())) {
                 score++;
             }
         }
