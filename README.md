@@ -1,156 +1,118 @@
 # PR Porting Utility
 
-A Java Maven application that automates porting changes from a specific pull request (PR) to a target branch in a Git repository. The utility analyzes the PR changes, checks for conflicts, and applies only the exact changes introduced in the PR.
+A safe and efficient utility for porting changes from one branch to another. This tool helps you analyze, check for conflicts, and port changes from a merged PR to another branch.
 
-## Features
+## 🔒 Safety First
 
-- Clones the Git repository and checks out both source and target branches
-- Creates a new port branch from the target branch for changes
-- Analyzes pull request changes at the file and line level
-- Detects potential conflicts before applying changes
-- Applies changes only if no conflicts are found
-- Generates an HTML report with detailed porting status and diff information
+This utility is designed with safety as the top priority:
+- **Read-Only by Default**: All operations are read-only until you explicitly push changes
+- **No Remote Modifications**: Never modifies or deletes remote branches
+- **Local Changes Only**: All changes are made locally until you choose to push them
+- **Explicit Control**: You have full control over when and how changes are pushed
 
-## Requirements
+## 🚀 Features
+
+- Analyzes changes from a merged PR
+- Checks for potential conflicts before porting
+- Generates detailed reports of changes
+- Creates local branches for porting
+- Provides clear logging of all operations
+- Safe repository state verification
+
+## 📋 Prerequisites
 
 - Java 8 or higher
-- Maven 3.6 or higher
-- Git repository with pull request access
+- Git installed and configured
+- GitHub Personal Access Token (for HTTPS repositories)
+- SSH key configured (for SSH repositories)
 
-## Building the Project
+## 🔧 Setup
 
+1. Clone the repository:
 ```bash
-mvn clean package
+git clone <repository-url>
 ```
 
-This will create a runnable JAR file in the `target` directory.
-
-## Usage
-
+2. Build the project:
 ```bash
-java -jar target/pr-porting-utility-1.0-SNAPSHOT-jar-with-dependencies.jar <repoUrl> <sourceBranch> <targetBranch> <prNumber>
+./gradlew build
 ```
 
-### Parameters
-
-- `repoUrl`: URL of the Git repository (supports both HTTPS and SSH URLs)
-- `sourceBranch`: Branch where the PR was raised
-- `targetBranch`: Branch where changes need to be ported
-- `prNumber`: Pull request number
-
-### Example
-
+3. Set up your GitHub token (for HTTPS repositories):
 ```bash
-# Using HTTPS URL
-java -jar target/pr-porting-utility-1.0-SNAPSHOT-jar-with-dependencies.jar https://github.com/username/repo.git feature-branch main 123
-
-# Using SSH URL
-java -jar target/pr-porting-utility-1.0-SNAPSHOT-jar-with-dependencies.jar git@github.com:username/repo.git feature-branch main 123
+export GITHUB_TOKEN=your_token_here
 ```
 
-### Authentication
+## 🎯 Usage
 
-The utility supports multiple authentication methods:
-
-#### HTTPS Authentication (Recommended)
-For HTTPS repositories, you need to set up a personal access token:
-
-1. Create a GitHub personal access token:
-   - Go to GitHub Settings > Developer Settings > Personal Access Tokens
-   - Generate a new token with `repo` scope
-   - Copy the token
-
-2. Set the token as an environment variable:
-   ```bash
-   # For Linux/Mac
-   export GITHUB_TOKEN=your_token_here
-
-   # For Windows PowerShell
-   $env:GITHUB_TOKEN="your_token_here"
-   ```
-
-3. Run the utility:
-   ```bash
-   java -jar target/pr-porting-utility-1.0-SNAPSHOT-jar-with-dependencies.jar https://github.com/username/repo.git feature-branch main 123
-   ```
-
-#### SSH Authentication
-1. Ensure you have an SSH key pair generated:
-   ```bash
-   ssh-keygen -t ed25519 -C "your_email@example.com"
-   ```
-2. Add the public key to your Git hosting service (GitHub, GitLab, etc.)
-3. The utility will automatically use your default SSH key from `~/.ssh/`
-
-Note: For security reasons, always use a personal access token with minimal required permissions.
-
-### Branching Strategy
-
-The utility implements a safe porting strategy:
-
-1. Creates a new branch named `{targetBranch}-port-{prNumber}` (e.g., "main-port-123")
-2. Applies all changes to this new branch
-3. Creates commits in the new branch
-
-After running the utility:
-1. Push the new port branch to the remote repository:
-   ```bash
-   git push origin {targetBranch}-port-{prNumber}
-   ```
-2. Create a pull request from the port branch to the target branch
-3. Review and merge the changes
-
-This approach allows for:
-- Safe review of changes before merging to target branch
-- Easy rollback if issues are found
-- Clean separation of ported changes
-
-## Output
-
-The utility generates an HTML report in the `reports` directory with the following information:
-
-- List of files that were processed
-- Status of each file (Successfully Ported or Skipped)
-- Reason for skipping if applicable
-- Diff information for successfully ported files
-- Name of the created port branch
-
-## Project Structure
-
-```
-src/main/java/com/prporter/
-├── Main.java                 # Application entry point
-├── analyzer/
-│   └── PRAnalyzer.java       # Analyzes PR changes
-├── checker/
-│   └── ConflictChecker.java  # Checks for conflicts
-├── model/
-│   ├── ChangedFile.java      # Represents a changed file
-│   └── FileStatus.java       # File status enum
-├── patcher/
-│   └── FilePatcher.java      # Applies changes to target branch
-└── report/
-    └── ReportGenerator.java  # Generates HTML report
+Run the utility with the following parameters:
+```bash
+java -jar pr-porting-utility.jar <repoUrl> <sourceBranch> <targetBranch> <prNumber>
 ```
 
-## Error Handling
+Example:
+```bash
+java -jar pr-porting-utility.jar https://github.com/username/repo.git main develop 123
+```
 
-The utility handles various scenarios:
+### Parameters:
+- `repoUrl`: URL of the Git repository
+- `sourceBranch`: Branch containing the merged PR
+- `targetBranch`: Branch where changes should be ported
+- `prNumber`: Number of the PR to port
 
-- Invalid repository URL or branch names
-- Git authentication issues
-- File conflicts
-- File access permissions
-- Invalid PR number
+## 🔍 How It Works
 
-## Contributing
+1. **Analysis Phase**:
+   - Fetches latest repository information
+   - Analyzes the merged PR
+   - Identifies changed files
+   - Checks for potential conflicts
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+2. **Porting Phase**:
+   - Creates a local branch for porting
+   - Applies changes locally
+   - Generates a report of ported changes
 
-## License
+3. **Review Phase**:
+   - Review the changes locally
+   - Test the changes
+   - Push changes when ready
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+## ⚠️ Important Notes
+
+- The utility never modifies remote branches
+- All changes are made locally until you explicitly push them
+- You have full control over when to push changes
+- Always review changes before pushing
+
+## 🔐 Security
+
+- No remote branches are modified or deleted
+- Credentials are handled securely
+- All operations are logged for transparency
+- Repository state is verified before operations
+
+## 🛠️ Troubleshooting
+
+If you encounter issues:
+
+1. Check your credentials:
+   - For HTTPS: Verify your GitHub token
+   - For SSH: Verify your SSH key configuration
+
+2. Verify repository access:
+   - Ensure you have read access to the repository
+   - Check if the PR exists and has been merged
+
+3. Check branch names:
+   - Verify source and target branch names
+   - Ensure branches exist in the repository
+
+## 📝 License
+
+[Your License Here]
+
+## 🤝 Contributing
+
+Contributions are welcome! Please read our contributing guidelines before submitting pull requests.
