@@ -43,6 +43,24 @@ public class Main {
         System.out.println("Target Branch: " + targetBranch);
         System.out.println("PR Number: " + prNumber);
 
+        // Check AI patching configuration
+        String disableAiPatching = System.getenv("DISABLE_AI_PATCHING");
+        String openaiApiKey = System.getenv("OPENAI_API_KEY");
+        
+        System.out.println("\n🤖 AI Patching Configuration:");
+        if ("true".equalsIgnoreCase(disableAiPatching) || "1".equals(disableAiPatching)) {
+            System.out.println("   AI patching is DISABLED (DISABLE_AI_PATCHING=true)");
+            System.out.println("   Conflicts will be flagged for manual review");
+        } else if (openaiApiKey == null || openaiApiKey.isEmpty()) {
+            System.out.println("   AI patching is DISABLED (no OPENAI_API_KEY found)");
+            System.out.println("   Conflicts will be flagged for manual review");
+        } else {
+            System.out.println("   AI patching is ENABLED");
+            System.out.println("   Rate limiting: Exponential backoff with 5 retries");
+            System.out.println("   To disable: Set DISABLE_AI_PATCHING=true");
+        }
+        System.out.println();
+
         try {
             File repoDir = new File(REPO_DIR);
             boolean isNewClone = !isValidGitRepository(repoDir);
@@ -128,11 +146,36 @@ public class Main {
                 resetRepository(git, credentialsProvider);
             }
 
+            // Fetch all remotes before checkout
+            System.out.println("Fetching all remotes before checkout...");
+            git.fetch().setRemote("origin").setCredentialsProvider(credentialsProvider).call();
+
+            // Robustly check out the target branch
+            boolean localBranchExists = git.getRepository().findRef(targetBranch) != null;
+            if (!localBranchExists) {
+                // Try to find the remote branch
+                String remoteBranchRef = "refs/remotes/origin/" + targetBranch;
+                boolean remoteBranchExists = git.getRepository().findRef(remoteBranchRef) != null;
+                if (remoteBranchExists) {
+                    System.out.println("Creating local branch from remote: " + targetBranch);
+                    git.checkout()
+                        .setCreateBranch(true)
+                        .setName(targetBranch)
+                        .setStartPoint("origin/" + targetBranch)
+                        .call();
+                } else {
+                    throw new RuntimeException("Target branch '" + targetBranch + "' does not exist locally or remotely.");
+                }
+            } else {
+                System.out.println("Checking out local branch: " + targetBranch);
+                git.checkout().setName(targetBranch).call();
+            }
+
             // Initialize components
             System.out.println("Initializing components...");
             PRAnalyzer prAnalyzer = new PRAnalyzer(git, credentialsProvider);
             ConflictChecker conflictChecker = new ConflictChecker(git, credentialsProvider);
-            FilePatcher filePatcher = new FilePatcher(git);
+            FilePatcher filePatcher = new FilePatcher(git, prAnalyzer);
             ReportGenerator reportGenerator = new ReportGenerator();
 
             // Analyze PR changes
@@ -140,6 +183,14 @@ public class Main {
             List<ChangedFile> changedFiles = prAnalyzer.analyzePR(sourceBranch, targetBranch, prNumber);
             System.out.println("Found " + changedFiles.size() + " changed files in PR #" + prNumber);
 
+            // Create and checkout port branch once for the PR
+            String portBranchName = targetBranch + "-port-" + prNumber;
+            System.out.println("Creating port branch: " + portBranchName);
+            git.checkout()
+               .setCreateBranch(true)
+               .setName(portBranchName)
+               .call();
+            
             // Process each changed file
             int successCount = 0;
             int skippedCount = 0;
@@ -162,7 +213,7 @@ public class Main {
 
                     // Apply changes
                     System.out.println("Applying changes to target branch...");
-                    filePatcher.applyChanges(file, targetBranch, prNumber);
+                    filePatcher.applyChanges(file, targetBranch, prNumber, sourceBranch);
                     file.setStatus(FileStatus.PORTED);
                     System.out.println("✅ Changes applied successfully");
                     successCount++;

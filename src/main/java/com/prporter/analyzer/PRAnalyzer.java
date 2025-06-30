@@ -1,7 +1,6 @@
 package com.prporter.analyzer;
 
 import com.prporter.model.ChangedFile;
-import com.prporter.model.FileStatus;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.api.errors.JGitInternalException;
@@ -11,20 +10,16 @@ import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectReader;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
-import org.eclipse.jgit.revwalk.RevWalk;
-import org.eclipse.jgit.revwalk.filter.RevFilter;
 import org.eclipse.jgit.treewalk.CanonicalTreeParser;
 import org.eclipse.jgit.transport.CredentialsProvider;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.RepositoryState;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 public class PRAnalyzer {
     private final Git git;
@@ -225,6 +220,7 @@ public class PRAnalyzer {
         try (ByteArrayOutputStream out = new ByteArrayOutputStream();
              DiffFormatter diffFormatter = new DiffFormatter(out)) {
             diffFormatter.setRepository(repository);
+            diffFormatter.setContext(0); // Get hunks without any context lines initially, we add them back.
             
             // Get the raw diff content
             diffFormatter.format(diff);
@@ -234,35 +230,90 @@ public class PRAnalyzer {
             int currentStartLine = 0;
             int currentEndLine = 0;
             StringBuilder currentContent = new StringBuilder();
+            boolean inHunk = false;
             
             for (String line : lines) {
                 if (line.startsWith("@@")) {
                     // Save previous hunk if exists
-                    if (currentContent.length() > 0) {
+                    if (inHunk && currentContent.length() > 0) {
                         diffHunks.add(new ChangedFile.DiffHunk(currentStartLine, currentEndLine, currentContent.toString()));
-                        currentContent = new StringBuilder();
                     }
                     
-                    // Parse the hunk header
+                    currentContent = new StringBuilder();
+                    inHunk = true;
+                    
+                    // Parse the hunk header for the original file's line numbers
                     String[] parts = line.split(" ");
-                    if (parts.length >= 2) {
-                        String[] lineNumbers = parts[1].split(",");
-                        if (lineNumbers.length >= 2) {
-                            currentStartLine = Integer.parseInt(lineNumbers[0].substring(1));
-                            currentEndLine = currentStartLine + Integer.parseInt(lineNumbers[1]) - 1;
+                    if (parts.length > 1) {
+                        String oldRange = parts[1]; // e.g., -58,7
+                        String[] lineNumbers = oldRange.substring(1).split(",");
+                        if (lineNumbers.length > 0) {
+                            currentStartLine = Integer.parseInt(lineNumbers[0]);
+                            if (lineNumbers.length > 1) {
+                                currentEndLine = currentStartLine + Integer.parseInt(lineNumbers[1]) - 1;
+                            } else {
+                                currentEndLine = currentStartLine;
+                            }
                         }
                     }
-                } else if (line.startsWith("+") || line.startsWith("-")) {
+                    currentContent.append(line).append("\n");
+                } else if (inHunk) {
+                    // Store all lines within a hunk (context, added, removed)
                     currentContent.append(line).append("\n");
                 }
             }
             
             // Add the last hunk
-            if (currentContent.length() > 0) {
+            if (inHunk && currentContent.length() > 0) {
                 diffHunks.add(new ChangedFile.DiffHunk(currentStartLine, currentEndLine, currentContent.toString()));
             }
         }
         
         return diffHunks;
+    }
+
+    // Extract the full method code from a file in a specific branch by method name
+    public String extractMethodFromBranch(String filePath, String methodName, String branch) throws IOException, GitAPIException {
+        // Checkout the branch
+        String currentBranch = repository.getBranch();
+        if (!currentBranch.equals(branch)) {
+            git.checkout().setName(branch).call();
+        }
+        // Read the file
+        Path absPath = repository.getWorkTree().toPath().resolve(filePath);
+        List<String> lines = Files.readAllLines(absPath);
+        // Find method start
+        int start = -1, end = -1;
+        for (int i = 0; i < lines.size(); i++) {
+            if (lines.get(i).contains(methodName + "(") && lines.get(i).matches(".*\\b(public|private|protected|static|final)\\s+\\w+\\s+" + methodName + "\\s*\\(.*\\)\\s*\\{")) {
+                start = i;
+                break;
+            }
+        }
+        if (start == -1) return null;
+        // Find method end (matching braces)
+        int braceCount = 0;
+        for (int i = start; i < lines.size(); i++) {
+            braceCount += countChar(lines.get(i), '{');
+            braceCount -= countChar(lines.get(i), '}');
+            if (braceCount == 0) {
+                end = i;
+                break;
+            }
+        }
+        if (end == -1) return null;
+        StringBuilder method = new StringBuilder();
+        for (int i = start; i <= end; i++) {
+            method.append(lines.get(i)).append("\n");
+        }
+        // Restore original branch if needed
+        if (!currentBranch.equals(branch)) {
+            git.checkout().setName(currentBranch).call();
+        }
+        return method.toString();
+    }
+
+    private int countChar(String str, char c) {
+        return (int) str.chars().filter(ch -> ch == c).count();
     }
 } 

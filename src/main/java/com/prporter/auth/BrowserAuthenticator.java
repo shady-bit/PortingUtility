@@ -3,6 +3,9 @@ package com.prporter.auth;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import okhttp3.*;
+import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.transport.CredentialsProvider;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 
@@ -90,6 +93,37 @@ public class BrowserAuthenticator {
                 throw new IOException("Failed to get access token: " + response);
             }
             return JsonParser.parseString(response.body().string()).getAsJsonObject();
+        }
+    }
+
+    public void checkoutBranch(Git git, String branchName) throws GitAPIException {
+        git.fetch().setRemote("origin").call();
+
+        boolean localBranchExists;
+        try {
+            localBranchExists = git.getRepository().findRef(branchName) != null;
+        } catch (IOException e) {
+            throw new RuntimeException("Error checking local branch: " + branchName, e);
+        }
+
+        if (!localBranchExists) {
+            Ref remoteBranch;
+            try {
+                remoteBranch = git.getRepository().findRef("refs/remotes/origin/" + branchName);
+            } catch (IOException e) {
+                throw new RuntimeException("Error checking remote branch: " + branchName, e);
+            }
+            if (remoteBranch != null) {
+                git.checkout()
+                    .setCreateBranch(true)
+                    .setName(branchName)
+                    .setStartPoint("origin/" + branchName)
+                    .call();
+            } else {
+                throw new RuntimeException("Branch " + branchName + " does not exist locally or remotely.");
+            }
+        } else {
+            git.checkout().setName(branchName).call();
         }
     }
 } 

@@ -26,7 +26,7 @@ public class ReportGenerator {
             "        body { font-family: Arial, sans-serif; margin: 20px; }\n" +
             "        .container { max-width: 1200px; margin: 0 auto; }\n" +
             "        .header { background-color: #f5f5f5; padding: 20px; border-radius: 5px; margin-bottom: 20px; }\n" +
-            "        .file-list { border-collapse: collapse; width: 100%; }\n" +
+            "        .file-list { border-collapse: collapse; width: 100%%; }\n" +
             "        .file-list th, .file-list td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }\n" +
             "        .file-list th { background-color: #f5f5f5; }\n" +
             "        .status-success { color: #28a745; }\n" +
