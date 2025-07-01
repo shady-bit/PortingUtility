@@ -20,7 +20,9 @@ import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.RepositoryState;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.springframework.stereotype.Service;
 
+@Service
 public class PRAnalyzer {
     private final Git git;
     private final Repository repository;

@@ -8,35 +8,30 @@ import okhttp3.*;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Properties;
-import java.io.FileInputStream;
 
+@Service
 public class FilePatcher {
     private final Git git;
     private final Repository repository;
     private final PRAnalyzer prAnalyzer;
-    private static Properties aiPatcherProperties = null;
-    private static int connectTimeoutSeconds = 30;
-    private static int writeTimeoutSeconds = 30;
-    private static int readTimeoutSeconds = 120;
-    static {
-        try {
-            aiPatcherProperties = new Properties();
-            aiPatcherProperties.load(new FileInputStream("ai-patcher.properties"));
-            connectTimeoutSeconds = Integer.parseInt(aiPatcherProperties.getProperty("openai.connectTimeoutSeconds", "30"));
-            writeTimeoutSeconds = Integer.parseInt(aiPatcherProperties.getProperty("openai.writeTimeoutSeconds", "30"));
-            readTimeoutSeconds = Integer.parseInt(aiPatcherProperties.getProperty("openai.readTimeoutSeconds", "120"));
-        } catch (Exception e) {
-            System.out.println("[AI PATCH] Could not load ai-patcher.properties, using default timeouts.");
-        }
-    }
 
+    @Value("${openai.connect-timeout-seconds:30}")
+    private int connectTimeoutSeconds;
+    @Value("${openai.write-timeout-seconds:30}")
+    private int writeTimeoutSeconds;
+    @Value("${openai.read-timeout-seconds:120}")
+    private int readTimeoutSeconds;
+
+    @Autowired
     public FilePatcher(Git git, PRAnalyzer prAnalyzer) {
         this.git = git;
         this.repository = git.getRepository();
