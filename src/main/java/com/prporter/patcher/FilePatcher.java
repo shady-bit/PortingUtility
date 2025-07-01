@@ -1,6 +1,5 @@
 package com.prporter.patcher;
 
-import com.prporter.model.ChangedFile.MethodChange;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.lib.Repository;
@@ -15,11 +14,28 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
+import java.io.FileInputStream;
 
 public class FilePatcher {
     private final Git git;
     private final Repository repository;
     private final PRAnalyzer prAnalyzer;
+    private static Properties aiPatcherProperties = null;
+    private static int connectTimeoutSeconds = 30;
+    private static int writeTimeoutSeconds = 30;
+    private static int readTimeoutSeconds = 120;
+    static {
+        try {
+            aiPatcherProperties = new Properties();
+            aiPatcherProperties.load(new FileInputStream("ai-patcher.properties"));
+            connectTimeoutSeconds = Integer.parseInt(aiPatcherProperties.getProperty("openai.connectTimeoutSeconds", "30"));
+            writeTimeoutSeconds = Integer.parseInt(aiPatcherProperties.getProperty("openai.writeTimeoutSeconds", "30"));
+            readTimeoutSeconds = Integer.parseInt(aiPatcherProperties.getProperty("openai.readTimeoutSeconds", "120"));
+        } catch (Exception e) {
+            System.out.println("[AI PATCH] Could not load ai-patcher.properties, using default timeouts.");
+        }
+    }
 
     public FilePatcher(Git git, PRAnalyzer prAnalyzer) {
         this.git = git;
@@ -37,18 +53,63 @@ public class FilePatcher {
         for (com.prporter.model.ChangedFile.DiffHunk hunk : file.getDiffHunks()) {
             try {
                 System.out.println("Applying diff hunk: lines " + hunk.getStartLine() + "-" + hunk.getEndLine());
-                boolean success = applyDiffHunkIntelligently(currentLines, hunk, file.getPath(), sourceBranch);
+                boolean success = applyDiffHunkIntelligently(currentLines, hunk, file.getPath(), sourceBranch, file);
                 if (success) {
                     portedHunks.add("lines " + hunk.getStartLine() + "-" + hunk.getEndLine());
                 } else {
                     failedHunks.add("lines " + hunk.getStartLine() + "-" + hunk.getEndLine());
+                    file.setStatus(com.prporter.model.FileStatus.PARTIALLY_PORTED);
+                    file.setReason("AI could not help for hunk(s): " + String.join(", ", failedHunks) + ". Manual review required.");
+                    file.setAiSuggestion(String.join("\n", currentLines));
+                    return;
                 }
             } catch (Exception e) {
                 System.out.println("Failed to apply diff hunk: " + e.getMessage());
                 failedHunks.add("lines " + hunk.getStartLine() + "-" + hunk.getEndLine());
+                file.setStatus(com.prporter.model.FileStatus.PARTIALLY_PORTED);
+                file.setReason("Exception during patching: " + e.getMessage() + ". Manual review required.");
+                file.setAiSuggestion(String.join("\n", currentLines));
+                return;
             }
         }
         Files.write(filePath, currentLines);
+
+        // Syntax check using javac
+        try {
+            System.out.println("[PATCHER] Compiling file: " + filePath.toString());
+            System.out.println("[PATCHER] File exists: " + Files.exists(filePath));
+            System.out.println("[PATCHER] Working directory: " + System.getProperty("user.dir"));
+            ProcessBuilder pb = new ProcessBuilder(
+                "javac",
+                "-cp", "target/classes",
+                "-d", "target/classes",
+                "-sourcepath", "src/main/java",
+                filePath.toString()
+            );
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+            StringBuilder errorOutput = new StringBuilder();
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    errorOutput.append(line).append("\n");
+                }
+            }
+            int exitCode = process.waitFor();
+            if (exitCode != 0) {
+                file.setStatus(com.prporter.model.FileStatus.PARTIALLY_PORTED);
+                file.setReason("File does not compile after patch. Manual review mandatory.\nCompiler output:\n" + errorOutput.toString());
+                file.setAiSuggestion(String.join("\n", currentLines));
+                return;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            file.setStatus(com.prporter.model.FileStatus.PARTIALLY_PORTED);
+            file.setReason("Syntax check interrupted. Manual review mandatory.");
+            file.setAiSuggestion(String.join("\n", currentLines));
+            return;
+        }
+
         git.add().addFilepattern(file.getPath()).call();
         StringBuilder commitMessage = new StringBuilder();
         commitMessage.append("Port changes from PR #").append(prNumber).append("\n\n");
@@ -73,90 +134,31 @@ public class FilePatcher {
     }
 
     // Apply a diff hunk at the file level using context lines. If context does not match, call AI. If AI cannot help, flag for manual review.
-    private boolean applyDiffHunkIntelligently(List<String> currentLines, com.prporter.model.ChangedFile.DiffHunk hunk, String filePath, String sourceBranch) {
-        String[] hunkLines = hunk.getContent().split("\n");
-        
-        List<String> linesToRemove = new ArrayList<>();
-        List<String> linesToAdd = new ArrayList<>();
-        
-        // First line is hunk header, skip it.
-        // We only care about additions and removals for patching. 
-        // The original context is implicit in the lines to remove.
-        for (int i = 1; i < hunkLines.length; i++) {
-            String line = hunkLines[i];
-            if (line.startsWith("-")) {
-                linesToRemove.add(line.substring(1));
-            } else if (line.startsWith("+")) {
-                linesToAdd.add(line.substring(1));
-            } else { // Context line
-                String contextLine = line.substring(1);
-                linesToRemove.add(contextLine);
-                linesToAdd.add(contextLine);
-            }
+    private boolean applyDiffHunkIntelligently(List<String> currentLines, com.prporter.model.ChangedFile.DiffHunk hunk, String filePath, String sourceBranch, com.prporter.model.ChangedFile file) {
+        // Always use AI for patching
+        System.out.println("[AI PATCH] Using AI to apply hunk at lines " + hunk.getStartLine() + "-" + hunk.getEndLine() + ".");
+        String disableAiPatching = System.getenv("DISABLE_AI_PATCHING");
+        if ("true".equalsIgnoreCase(disableAiPatching) || "1".equals(disableAiPatching)) {
+            System.out.println("[AI PATCH] AI patching is disabled via DISABLE_AI_PATCHING environment variable. Flagging for manual review.");
+            return false;
         }
-        
-        // Find the starting index of the sublist to be replaced.
-        int startIndex = -1;
-        if (!linesToRemove.isEmpty()) {
-            for (int i = 0; i <= currentLines.size() - linesToRemove.size(); i++) {
-                if (currentLines.subList(i, i + linesToRemove.size()).equals(linesToRemove)) {
-                    startIndex = i;
-                    break;
-                }
-            }
-        } else if (!linesToAdd.isEmpty()) {
-            // This case handles pure additions. We need a better way to find the position.
-            // For now, we will rely on the hunk's start line. This is not ideal.
-             int hunkStart = hunk.getStartLine() -1;
-             if(hunkStart >= 0 && hunkStart <= currentLines.size()){
-                startIndex = hunkStart;
-             }
-        }
-
-
-        if (startIndex != -1) {
-            // Found a match, apply the patch
-            List<String> tempLines = new ArrayList<>(currentLines);
-            
-            // Remove the old lines
-            if (!linesToRemove.isEmpty()) {
-                tempLines.subList(startIndex, startIndex + linesToRemove.size()).clear();
-            }
-            
-            // Add the new lines
-            tempLines.addAll(startIndex, linesToAdd);
-
+        String aiPrompt = "You are a code migration assistant.\n"
+                + "Understand the intent of the change in the diff hunk and try to do the same in the target file.\n"
+                + "Apply the following diff hunk to the target file, adapting the change to fit the file's current structure.\n"
+                + "Return ONLY the complete, modified file content. Do not include explanations, comments, or markdown code fences.\n"
+                + "If you cannot safely apply the change, reply with: MANUAL REVIEW NEEDED\n\n"
+                + "---\n" + "Diff Hunk:\n" + hunk.getContent() + "\n\n"
+                + "Current Target File Content:\n" + String.join("\n", currentLines) + "\n";
+        String aiResult = callOpenAIApi(aiPrompt);
+        if (aiResult != null && !aiResult.trim().equalsIgnoreCase("MANUAL REVIEW NEEDED")) {
             currentLines.clear();
-            currentLines.addAll(tempLines);
+            for (String l : aiResult.split("\n")) currentLines.add(l);
+            System.out.println("[AI PATCH] AI successfully patched the hunk at lines " + hunk.getStartLine() + "-" + hunk.getEndLine() + ".");
             return true;
         } else {
-            // Context does not match, call AI for intent-preserving patching
-            System.out.println("[AI PATCH] Context does not match for hunk at lines " + hunk.getStartLine() + "-" + hunk.getEndLine() + ". Calling AI for help.");
-            
-            // Check if AI patching is disabled
-            String disableAiPatching = System.getenv("DISABLE_AI_PATCHING");
-            if ("true".equalsIgnoreCase(disableAiPatching) || "1".equals(disableAiPatching)) {
-                System.out.println("[AI PATCH] AI patching is disabled via DISABLE_AI_PATCHING environment variable. Flagging for manual review.");
-                return false;
-            }
-            
-            String aiPrompt =
-                "You are a code migration assistant.\n\n" +
-                "Here is a diff hunk from a PR that could not be applied cleanly to the target file.\n" +
-                "Please apply the intent of the change to the target file, adapting as needed.\n" +
-                "If you cannot do this safely, reply: MANUAL REVIEW NEEDED.\n" +
-                "\nDiff hunk:\n```diff\n" + hunk.getContent() + "\n```\n" +
-                "\nCurrent target file content:\n```java\n" + String.join("\n", currentLines) + "\n```\n";
-            String aiResult = callOpenAIApi(aiPrompt);
-            if (aiResult != null && !aiResult.trim().equalsIgnoreCase("MANUAL REVIEW NEEDED")) {
-                // Replace the file content with the AI's suggestion
-                currentLines.clear();
-                for (String l : aiResult.split("\n")) currentLines.add(l);
-                return true;
-            } else {
-                System.out.println("[AI PATCH] AI could not help. Flagging for manual review.");
-                return false;
-            }
+            System.out.println("[AI PATCH] AI could not help. Flagging for manual review.");
+            file.setAiSuggestion(aiResult); // Save the AI's suggestion for the report
+            return false;
         }
     }
 
@@ -168,7 +170,11 @@ public class FilePatcher {
             return null;
         }
         String endpoint = "https://api.openai.com/v1/chat/completions";
-        OkHttpClient client = new OkHttpClient();
+        OkHttpClient client = new OkHttpClient.Builder()
+            .connectTimeout(connectTimeoutSeconds, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(writeTimeoutSeconds, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(readTimeoutSeconds, java.util.concurrent.TimeUnit.SECONDS)
+            .build();
         MediaType mediaType = MediaType.parse("application/json");
         Gson gson = new Gson();
         JsonObject body = new JsonObject();
@@ -228,16 +234,19 @@ public class FilePatcher {
                 }
                 
                 String responseBody = response.body().string();
-                int contentIndex = responseBody.indexOf("\"content\":");
-                if (contentIndex != -1) {
-                    int start = responseBody.indexOf('"', contentIndex + 11) + 1;
-                    int end = responseBody.indexOf('"', start);
-                    if (start != -1 && end != -1 && end > start) {
-                        String content = responseBody.substring(start, end);
+                JsonObject jsonResponse = gson.fromJson(responseBody, JsonObject.class);
+                JsonArray choices = jsonResponse.getAsJsonArray("choices");
+                if (choices != null && !choices.isEmpty()) {
+                    JsonObject choice = choices.get(0).getAsJsonObject();
+                    JsonObject message = choice.getAsJsonObject("message");
+                    if (message != null && message.has("content")) {
+                        String content = message.get("content").getAsString();
+                        // The new prompt asks for no markdown, but let's be safe.
                         content = content.replaceAll("^```[a-zA-Z]*\\n|```$", "").trim();
                         return content;
                     }
                 }
+                System.out.println("[AI PATCH] Could not parse content from OpenAI response: " + responseBody);
                 return null;
                 
             } catch (InterruptedException e) {
@@ -245,7 +254,8 @@ public class FilePatcher {
                 System.out.println("[AI PATCH] API call interrupted");
                 return null;
             } catch (Exception e) {
-                System.out.println("[AI PATCH] Exception calling OpenAI API: " + e.getMessage());
+                System.out.println("[AI PATCH] Exception calling OpenAI API: " + e);
+                e.printStackTrace();
                 if (attempt < maxRetries - 1) {
                     // Retry on network errors with exponential backoff
                     int delayMs = baseDelayMs * (int) Math.pow(2, attempt);

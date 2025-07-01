@@ -9,6 +9,7 @@ public class ChangedFile {
     private FileStatus status;
     private String reason;
     private List<MethodChange> methodChanges;
+    private String aiSuggestion;
 
     public ChangedFile(String path) {
         this.path = path;
@@ -49,6 +50,14 @@ public class ChangedFile {
 
     public List<MethodChange> getMethodChanges() {
         return methodChanges;
+    }
+
+    public String getAiSuggestion() {
+        return aiSuggestion;
+    }
+
+    public void setAiSuggestion(String aiSuggestion) {
+        this.aiSuggestion = aiSuggestion;
     }
 
     private void analyzeMethodChanges() {

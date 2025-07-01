@@ -4,5 +4,6 @@ public enum FileStatus {
     PENDING,
     PORTED,
     PARTIALLY_PORTED,
-    SKIPPED
+    SKIPPED,
+    REVIEW_MANDATORY
 } 
