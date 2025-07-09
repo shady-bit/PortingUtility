@@ -238,6 +238,7 @@ public class PRAnalyzer {
                 if (line.startsWith("@@")) {
                     // Save previous hunk if exists
                     if (inHunk && currentContent.length() > 0) {
+                        // Always add the hunk, even if zero-length
                         diffHunks.add(new ChangedFile.DiffHunk(currentStartLine, currentEndLine, currentContent.toString()));
                     }
                     
@@ -267,6 +268,7 @@ public class PRAnalyzer {
             
             // Add the last hunk
             if (inHunk && currentContent.length() > 0) {
+                // Always add the hunk, even if zero-length
                 diffHunks.add(new ChangedFile.DiffHunk(currentStartLine, currentEndLine, currentContent.toString()));
             }
         }
@@ -317,5 +319,120 @@ public class PRAnalyzer {
 
     private int countChar(String str, char c) {
         return (int) str.chars().filter(ch -> ch == c).count();
+    }
+
+    // Get the full file content from a specific branch (used for AI patching)
+    public String getSourceFileContent(String filePath, String branch) throws IOException, org.eclipse.jgit.api.errors.GitAPIException {
+        String currentBranch = repository.getBranch();
+        try {
+            if (!currentBranch.equals(branch)) {
+                git.checkout().setName(branch).call();
+            }
+            Path absPath = repository.getWorkTree().toPath().resolve(filePath);
+            if (!Files.exists(absPath)) {
+                return null;
+            }
+            List<String> lines = Files.readAllLines(absPath);
+            return String.join("\n", lines);
+        } finally {
+            if (!currentBranch.equals(branch)) {
+                git.checkout().setName(currentBranch).call();
+            }
+        }
+    }
+
+    // Get the full file content from a specific commit hash
+    public String getFileContentFromCommit(String filePath, String commitHash) throws IOException {
+        ObjectId commitId = repository.resolve(commitHash);
+        if (commitId == null) {
+            throw new IOException("Could not resolve commit hash: " + commitHash);
+        }
+        try (ObjectReader reader = repository.newObjectReader()) {
+            RevCommit commit = repository.parseCommit(commitId);
+            org.eclipse.jgit.treewalk.TreeWalk treeWalk = new org.eclipse.jgit.treewalk.TreeWalk(repository);
+            treeWalk.addTree(commit.getTree());
+            treeWalk.setRecursive(true);
+            treeWalk.setFilter(org.eclipse.jgit.treewalk.filter.PathFilter.create(filePath));
+            if (!treeWalk.next()) {
+                return null; // File not found in this commit
+            }
+            org.eclipse.jgit.lib.ObjectId objectId = treeWalk.getObjectId(0);
+            org.eclipse.jgit.lib.ObjectLoader loader = reader.open(objectId);
+            byte[] bytes = loader.getBytes();
+            return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        }
+    }
+
+    // Get the merge commit hash for a given PR number
+    public String getMergeCommitHashForPR(String sourceBranch, String prNumber) throws IOException, GitAPIException {
+        ObjectId sourceId = repository.resolve("refs/remotes/origin/" + sourceBranch);
+        if (sourceId == null) {
+            sourceId = repository.resolve(sourceBranch);
+        }
+        if (sourceId == null) {
+            sourceId = repository.resolve("origin/" + sourceBranch);
+        }
+        if (sourceId == null) {
+            sourceId = repository.resolve("refs/heads/" + sourceBranch);
+        }
+        if (sourceId == null) {
+            throw new JGitInternalException("Could not resolve source branch: " + sourceBranch);
+        }
+        Iterable<RevCommit> mergeCommits = git.log().add(sourceId).call();
+        for (RevCommit commit : mergeCommits) {
+            String message = commit.getFullMessage();
+            if (message.contains("Merge pull request #" + prNumber) || message.contains("Merged PR #" + prNumber)) {
+                return commit.getName();
+            }
+        }
+        throw new JGitInternalException("Could not find merge commit for PR #" + prNumber);
+    }
+
+    // Extract all files from a specific commit into a directory
+    public void extractAllFilesFromCommit(String commitHash, String destDir) throws IOException {
+        ObjectId commitId = repository.resolve(commitHash);
+        if (commitId == null) {
+            throw new IOException("Could not resolve commit hash: " + commitHash);
+        }
+        RevCommit commit = repository.parseCommit(commitId);
+        org.eclipse.jgit.treewalk.TreeWalk treeWalk = new org.eclipse.jgit.treewalk.TreeWalk(repository);
+        treeWalk.addTree(commit.getTree());
+        treeWalk.setRecursive(true);
+        try (org.eclipse.jgit.lib.ObjectReader reader = repository.newObjectReader()) {
+            while (treeWalk.next()) {
+                String path = treeWalk.getPathString();
+                org.eclipse.jgit.lib.ObjectId objectId = treeWalk.getObjectId(0);
+                org.eclipse.jgit.lib.ObjectLoader loader = reader.open(objectId);
+                byte[] bytes = loader.getBytes();
+                java.nio.file.Path outPath = java.nio.file.Paths.get(destDir, path);
+                java.nio.file.Files.createDirectories(outPath.getParent());
+                java.nio.file.Files.write(outPath, bytes);
+            }
+        }
+    }
+
+    // Extract only specified files from a specific commit into a directory
+    public void extractFilesFromCommit(String commitHash, String destDir, List<String> filePaths) throws IOException {
+        ObjectId commitId = repository.resolve(commitHash);
+        if (commitId == null) {
+            throw new IOException("Could not resolve commit hash: " + commitHash);
+        }
+        RevCommit commit = repository.parseCommit(commitId);
+        org.eclipse.jgit.treewalk.TreeWalk treeWalk = new org.eclipse.jgit.treewalk.TreeWalk(repository);
+        treeWalk.addTree(commit.getTree());
+        treeWalk.setRecursive(true);
+        java.util.Set<String> fileSet = new java.util.HashSet<>(filePaths);
+        try (org.eclipse.jgit.lib.ObjectReader reader = repository.newObjectReader()) {
+            while (treeWalk.next()) {
+                String path = treeWalk.getPathString();
+                if (!fileSet.contains(path)) continue;
+                org.eclipse.jgit.lib.ObjectId objectId = treeWalk.getObjectId(0);
+                org.eclipse.jgit.lib.ObjectLoader loader = reader.open(objectId);
+                byte[] bytes = loader.getBytes();
+                java.nio.file.Path outPath = java.nio.file.Paths.get(destDir, path);
+                java.nio.file.Files.createDirectories(outPath.getParent());
+                java.nio.file.Files.write(outPath, bytes);
+            }
+        }
     }
 } 

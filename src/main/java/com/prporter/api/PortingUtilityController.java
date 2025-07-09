@@ -50,6 +50,7 @@ public class PortingUtilityController {
             CredentialsProvider credentialsProvider = new UsernamePasswordCredentialsProvider("", ""); // TODO: Use real credentials if needed
             // Analyze PR
             List<ChangedFile> changedFiles = prAnalyzer.analyzePR(request.sourceBranch, request.targetBranch, request.prNumber);
+            String mergeCommitHash = prAnalyzer.getMergeCommitHashForPR(request.sourceBranch, request.prNumber);
             // Patch files
             for (ChangedFile file : changedFiles) {
                 filePatcher.applyChanges(file, request.targetBranch, request.prNumber, request.sourceBranch);

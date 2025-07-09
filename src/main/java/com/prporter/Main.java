@@ -10,16 +10,11 @@ import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.transport.CredentialsProvider;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
-import org.eclipse.jgit.util.FS;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
 import org.eclipse.jgit.api.ResetCommand;
-import org.eclipse.jgit.transport.URIish;
-
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 
 public class Main {
@@ -183,6 +178,16 @@ public class Main {
             List<ChangedFile> changedFiles = prAnalyzer.analyzePR(sourceBranch, targetBranch, prNumber);
             System.out.println("Found " + changedFiles.size() + " changed files in PR #" + prNumber);
 
+            // Get the merge commit hash for the PR
+            String mergeCommitHash = null;
+            try {
+                mergeCommitHash = prAnalyzer.getMergeCommitHashForPR(sourceBranch, prNumber);
+                System.out.println("Merge commit hash for PR #" + prNumber + ": " + mergeCommitHash);
+            } catch (Exception e) {
+                System.out.println("❌ Could not find merge commit for PR #" + prNumber + ": " + e.getMessage());
+                System.exit(1);
+            }
+
             // Create and checkout port branch once for the PR
             String portBranchName = targetBranch + "-port-" + prNumber;
             System.out.println("Creating port branch: " + portBranchName);
@@ -213,10 +218,21 @@ public class Main {
 
                     // Apply changes
                     System.out.println("Applying changes to target branch...");
-                    filePatcher.applyChanges(file, targetBranch, prNumber, sourceBranch);
-                    file.setStatus(FileStatus.PORTED);
-                    System.out.println("✅ Changes applied successfully");
-                    successCount++;
+                    filePatcher.applyChanges(file, targetBranch, prNumber, mergeCommitHash);
+                    // Print result based on file status
+                    if (file.getStatus() == FileStatus.PORTED) {
+                        System.out.println("✅ Changes applied successfully");
+                        successCount++;
+                    } else if (file.getStatus() == FileStatus.PARTIALLY_PORTED) {
+                        System.out.println("⚠️  Changes applied, but manual review required: " + file.getReason());
+                        skippedCount++;
+                    } else if (file.getStatus() == FileStatus.SKIPPED) {
+                        System.out.println("❌ Changes could not be applied: " + file.getReason());
+                        skippedCount++;
+                    } else {
+                        System.out.println("❓ Unknown status after patching: " + file.getStatus());
+                        skippedCount++;
+                    }
                     
                 } catch (Exception e) {
                     System.out.println("❌ Error processing file: " + e.getMessage());

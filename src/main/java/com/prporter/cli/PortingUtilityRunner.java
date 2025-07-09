@@ -8,8 +8,6 @@ import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.eclipse.jgit.transport.CredentialsProvider;
-import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
-import org.eclipse.jgit.util.FS;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -56,6 +54,7 @@ public class PortingUtilityRunner implements CommandLineRunner {
             CredentialsProvider credentialsProvider = new UsernamePasswordCredentialsProvider("", ""); // TODO: Use real credentials if needed
             // Analyze PR
             List<ChangedFile> changedFiles = prAnalyzer.analyzePR(sourceBranch, targetBranch, prNumber);
+            String mergeCommitHash = prAnalyzer.getMergeCommitHashForPR(sourceBranch, prNumber);
             // Patch files
             for (ChangedFile file : changedFiles) {
                 filePatcher.applyChanges(file, targetBranch, prNumber, sourceBranch);
